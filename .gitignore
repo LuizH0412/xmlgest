@@ -1,0 +1,21 @@
+# Ambiente virtual
+.venv/
+
+# Variáveis sensíveis
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Django
+*.log
+db.sqlite3
+
+# VSCode
+.vscode/
+
+# Sistema operacional
+Thumbs.db
+.DS_Store
