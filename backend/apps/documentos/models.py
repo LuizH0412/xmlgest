@@ -44,3 +44,22 @@ class Documento(models.Model):
         related_name='documentos_enviados'
     )
     criado_em = models.DateTimeField(auto_now_add=True)
+
+class ItemDocumento(models.Model):
+    documento = models.ForeignKey(
+        Documento, on_delete=models.CASCADE, related_name='itens'
+    )
+    numero_item = models.IntegerField()
+    descricao = models.CharField(max_length=500)
+    ncm = models.CharField(max_length=20, blank=True, null=True)
+    cest = models.CharField(max_length=20, blank=True, null=True)
+    cfop = models.CharField(max_length=10, blank=True, null=True)
+    cst_icms = models.CharField(max_length=10, blank=True, null=True)
+    cst_pis = models.CharField(max_length=10, blank=True, null=True)
+    cst_cofins = models.CharField(max_length=10, blank=True, null=True)
+    quantidade = models.DecimalField(max_digits=15, decimal_places=4, blank=True, null=True)
+    valor_unitario = models.DecimalField(max_digits=15, decimal_places=4, blank=True, null=True)
+    valor_total = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+
+    class Meta:
+        ordering = ['numero_item']

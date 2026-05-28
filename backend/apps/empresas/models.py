@@ -19,6 +19,11 @@ class Empresa(models.Model):
     cadastrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='empresas_cadastradas')
     atualizado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='empresas_atualizadas')
     email_contabilidade = models.EmailField(blank=True, null=True)
+    certificado_pfx = models.FileField(
+    upload_to='certificados/', blank=True, null=True
+    )
+    certificado_senha = models.BinaryField(blank=True, null=True)
+    certificado_validade = models.DateField(blank=True, null=True)
 
     def save(self, *args, **kwargs):
         if not self.client_id:

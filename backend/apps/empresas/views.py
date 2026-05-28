@@ -1,12 +1,13 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.parsers import MultiPartParser
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .models import Empresa
 from core.permissions import PaginacaoPadrao
 from django.utils import timezone
 from datetime import timedelta
-from .serializers import EmpresaSerializer
+from .serializers import EmpresaSerializer, EmpresaCertificadoSerializer
 from apps.documentos.models import Documento
 from core.permissions import IsAdminOrSupervisao
 
@@ -67,3 +68,12 @@ def empresa_por_codigo(request, codigo):
         return Response(dados)
     except Empresa.DoesNotExist:
         return Response({'detail': 'Empresa não encontrada.'}, status=404)
+    
+@action(detail=True, methods=['patch'], url_path='certificado', parser_classes=[MultiPartParser])
+def upload_certificado(self, request, pk=None):
+    empresa = self.get_object()
+    serializer = EmpresaCertificadoSerializer(empresa, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({'detail': 'Certificado salvo com sucesso.', 'validade': str(empresa.certificado_validade)})
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
