@@ -10,9 +10,12 @@ from datetime import timedelta
 from .serializers import EmpresaSerializer, EmpresaCertificadoSerializer
 from apps.documentos.models import Documento
 from core.permissions import IsAdminOrSupervisao
+from django.http import FileResponse
+import os
 
 
 class EmpresaViewSet(viewsets.ModelViewSet):
+    lookup_field = 'codigo_interno'  # <-- usa codigo_interno em todas as rotas
     pagination_class = PaginacaoPadrao
     queryset = Empresa.objects.all()
     serializer_class = EmpresaSerializer
@@ -31,6 +34,52 @@ class EmpresaViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(cadastrado_por=self.request.user)
+
+    @action(detail=True, methods=['patch'], url_path='certificado', parser_classes=[MultiPartParser])
+    def upload_certificado(self, request, codigo_interno=None):
+        empresa = self.get_object()
+        serializer = EmpresaCertificadoSerializer(empresa, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            empresa.refresh_from_db()
+            return Response({'detail': 'Certificado salvo com sucesso.', 'validade': str(empresa.certificado_validade)})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], url_path='certificado/download')
+    def download_certificado(self, request, codigo_interno=None):
+        empresa = self.get_object()
+
+        if not empresa.certificado_pfx:
+            return Response(
+                {'detail': 'Nenhum certificado cadastrado.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        caminho = empresa.certificado_pfx.path
+
+        if not os.path.exists(caminho):
+            return Response(
+                {'detail': 'Arquivo não encontrado.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        return FileResponse(
+            open(caminho, 'rb'),
+            as_attachment=True,
+            filename=f"certificado_{empresa.cnpj}.pfx",
+            content_type='application/x-pkcs12'
+        )
+    
+    @action(detail=True, methods=['patch'], url_path='certificado/remover')
+    def remover_certificado(self, request, codigo_interno=None):
+        empresa = self.get_object()
+        if empresa.certificado_pfx:
+            empresa.certificado_pfx.delete(save=False)
+        empresa.certificado_pfx = None
+        empresa.certificado_senha = None
+        empresa.certificado_validade = None
+        empresa.save()
+        return Response({'detail': 'Certificado removido com sucesso.'})
 
 
 @api_view(['GET'])
@@ -55,6 +104,7 @@ def empresas_sem_xml(request):
 
     return Response(alertas)
 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def empresa_por_codigo(request, codigo):
@@ -65,15 +115,7 @@ def empresa_por_codigo(request, codigo):
         credenciais = EmpresaCredenciaisSerializer(empresa).data
         dados['client_id'] = credenciais['client_id']
         dados['client_secret'] = credenciais['client_secret']
+        dados['certificado_validade'] = str(empresa.certificado_validade) if empresa.certificado_validade else None
         return Response(dados)
     except Empresa.DoesNotExist:
         return Response({'detail': 'Empresa não encontrada.'}, status=404)
-    
-@action(detail=True, methods=['patch'], url_path='certificado', parser_classes=[MultiPartParser])
-def upload_certificado(self, request, pk=None):
-    empresa = self.get_object()
-    serializer = EmpresaCertificadoSerializer(empresa, data=request.data, partial=True)
-    if serializer.is_valid():
-        serializer.save()
-        return Response({'detail': 'Certificado salvo com sucesso.', 'validade': str(empresa.certificado_validade)})
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

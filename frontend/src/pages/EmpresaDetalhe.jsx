@@ -20,6 +20,15 @@ function EmpresaDetalhe() {
   const [pagina, setPagina] = useState(1)
   const [total, setTotal] = useState(0)
 
+  // Certificado
+  const [certArquivo, setCertArquivo] = useState(null)
+  const [certSenha, setCertSenha] = useState('')
+  const [mostrarSenhaCert, setMostrarSenhaCert] = useState(false)
+  const [enviandoCert, setEnviandoCert] = useState(false)
+  const [certMsg, setCertMsg] = useState(null)
+  const [removendoCert, setRemovendoCert] = useState(false)
+  const [confirmarRemocao, setConfirmarRemocao] = useState(false)
+
   useEffect(() => {
     const carregarEmpresa = async () => {
       try {
@@ -36,9 +45,7 @@ function EmpresaDetalhe() {
 
   useEffect(() => {
     if (!empresa) return
-
     const controller = new AbortController()
-
     const carregarDocumentos = async () => {
       setLoadingDocs(true)
       try {
@@ -46,7 +53,6 @@ function EmpresaDetalhe() {
         if (filtroTipo)       url += `&tipo=${filtroTipo}`
         if (filtroDataInicio) url += `&data_emissao__gte=${filtroDataInicio}`
         if (filtroDataFim)    url += `&data_emissao__lte=${filtroDataFim}`
-
         const res = await api.get(url, { signal: controller.signal })
         setDocumentos(res.data.results)
         setTotal(res.data.count)
@@ -56,7 +62,6 @@ function EmpresaDetalhe() {
         setLoadingDocs(false)
       }
     }
-
     carregarDocumentos()
     return () => controller.abort()
   }, [empresa, pagina, filtroTipo, filtroDataInicio, filtroDataFim])
@@ -74,6 +79,89 @@ function EmpresaDetalhe() {
     setPagina(1)
   }
 
+  const downloadXml = async (chaveAcesso) => {
+    try {
+      const res = await api.get(`/documentos/${chaveAcesso}/download-xml/`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `${chaveAcesso}.xml`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch { alert('Erro ao baixar XML.') }
+  }
+
+  const downloadPdf = async (chaveAcesso) => {
+    try {
+      const res = await api.get(`/documentos/${chaveAcesso}/download-pdf/`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `${chaveAcesso}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch { alert('Erro ao baixar PDF.') }
+  }
+
+  const enviarCertificado = async () => {
+    if (!certArquivo || !certSenha) {
+      setCertMsg({ tipo: 'erro', texto: 'Selecione o arquivo .pfx e informe a senha.' })
+      return
+    }
+    setEnviandoCert(true)
+    setCertMsg(null)
+    try {
+      const formData = new FormData()
+      formData.append('certificado_pfx', certArquivo)
+      formData.append('senha', certSenha)
+      await api.patch(`/empresas/${empresa.codigo_interno}/certificado/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      setCertArquivo(null)
+      setCertSenha('')
+      setCertMsg(null)
+      const empresaAtualizada = await api.get(`/empresas/codigo/${codigo}/`)
+      setEmpresa(empresaAtualizada.data)
+    } catch (err) {
+      const detalhe = err.response?.data?.detail || 'Erro ao enviar certificado.'
+      setCertMsg({ tipo: 'erro', texto: detalhe })
+    } finally {
+      setEnviandoCert(false)
+    }
+  }
+
+  const downloadCertificado = async () => {
+    try {
+      const res = await api.get(`/empresas/${empresa.codigo_interno}/certificado/download/`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `certificado_${empresa.cnpj}.pfx`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch { alert('Erro ao baixar certificado.') }
+  }
+
+  const removerCertificado = async () => {
+    setRemovendoCert(true)
+    try {
+      await api.patch(`/empresas/${empresa.codigo_interno}/certificado/remover/`)
+      setConfirmarRemocao(false)
+      const empresaAtualizada = await api.get(`/empresas/codigo/${codigo}/`)
+      setEmpresa(empresaAtualizada.data)
+    } catch {
+      alert('Erro ao remover certificado.')
+    } finally {
+      setRemovendoCert(false)
+    }
+  }
+
   const temFiltrosAtivos = filtroTipo || filtroDataInicio || filtroDataFim
   const totalPaginas = Math.ceil(total / 20)
 
@@ -83,20 +171,16 @@ function EmpresaDetalhe() {
     </div>
   )
 
+  const certVencido = empresa.certificado_validade && new Date(empresa.certificado_validade) < new Date()
+
   return (
     <div className="min-h-screen bg-gray-950">
       <Navbar />
-
       <div className="max-w-7xl mx-auto px-6 py-8">
 
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
-          <button
-            onClick={() => navigate('/empresas')}
-            className="text-gray-400 hover:text-white transition text-sm"
-          >
-            ← Voltar
-          </button>
+          <button onClick={() => navigate('/empresas')} className="text-gray-400 hover:text-white transition text-sm">← Voltar</button>
           <div>
             <h1 className="text-white text-2xl font-bold">{empresa.nome_fantasia}</h1>
             <p className="text-gray-400 text-sm mt-1">Código: {empresa.codigo_interno} · CNPJ: {empresa.cnpj}</p>
@@ -109,11 +193,8 @@ function EmpresaDetalhe() {
         {/* Abas */}
         <div className="flex gap-1 mb-6 bg-gray-900 rounded-lg p-1 w-fit border border-gray-800">
           {['documentos', 'informacoes', 'credenciais'].map((aba) => (
-            <button
-              key={aba}
-              onClick={() => setAbaAtiva(aba)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${abaAtiva === aba ? 'bg-yellow-400 text-gray-900' : 'text-gray-400 hover:text-white'}`}
-            >
+            <button key={aba} onClick={() => setAbaAtiva(aba)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition ${abaAtiva === aba ? 'bg-yellow-400 text-gray-900' : 'text-gray-400 hover:text-white'}`}>
               {aba === 'informacoes' ? 'Informações' : aba === 'credenciais' ? 'Credenciais' : 'Documentos'}
             </button>
           ))}
@@ -122,18 +203,12 @@ function EmpresaDetalhe() {
         {/* Aba Documentos */}
         {abaAtiva === 'documentos' && (
           <div>
-            {/* Filtros */}
             <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-4">
               <div className="flex flex-wrap gap-3 items-end">
-
-                {/* Tipo */}
                 <div>
                   <label className="text-gray-400 text-xs mb-1 block">Tipo</label>
-                  <select
-                    value={filtroTipo}
-                    onChange={(e) => { setFiltroTipo(e.target.value); setPagina(1) }}
-                    className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm"
-                  >
+                  <select value={filtroTipo} onChange={(e) => { setFiltroTipo(e.target.value); setPagina(1) }}
+                    className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm">
                     <option value="">Todos</option>
                     <option value="NFe">NFe</option>
                     <option value="NFCe">NFCe</option>
@@ -141,44 +216,23 @@ function EmpresaDetalhe() {
                     <option value="MDFe">MDFe</option>
                   </select>
                 </div>
-
-                {/* Período */}
                 <div>
                   <label className="text-gray-400 text-xs mb-1 block">Período</label>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      value={filtroDataInicio}
-                      onChange={(e) => { setFiltroDataInicio(e.target.value); setPagina(1) }}
-                      className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm"
-                    />
+                    <input type="date" value={filtroDataInicio} onChange={(e) => { setFiltroDataInicio(e.target.value); setPagina(1) }}
+                      className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm" />
                     <span className="text-gray-500 text-sm">→</span>
-                    <input
-                      type="date"
-                      value={filtroDataFim}
-                      min={filtroDataInicio || undefined}
-                      onChange={(e) => { setFiltroDataFim(e.target.value); setPagina(1) }}
-                      className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm"
-                    />
+                    <input type="date" value={filtroDataFim} min={filtroDataInicio || undefined} onChange={(e) => { setFiltroDataFim(e.target.value); setPagina(1) }}
+                      className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm" />
                   </div>
                 </div>
-
                 {temFiltrosAtivos && (
-                  <button
-                    onClick={limparFiltros}
-                    className="text-gray-400 hover:text-red-400 text-sm transition self-end pb-2"
-                  >
-                    Limpar filtros
-                  </button>
+                  <button onClick={limparFiltros} className="text-gray-400 hover:text-red-400 text-sm transition self-end pb-2">Limpar filtros</button>
                 )}
-
-                <span className="ml-auto text-gray-400 text-sm self-end pb-2">
-                  {total} documento{total !== 1 ? 's' : ''}
-                </span>
+                <span className="ml-auto text-gray-400 text-sm self-end pb-2">{total} documento{total !== 1 ? 's' : ''}</span>
               </div>
             </div>
 
-            {/* Tabela documentos */}
             <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
               <table className="w-full">
                 <thead>
@@ -188,13 +242,14 @@ function EmpresaDetalhe() {
                     <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Emissão</th>
                     <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Valor</th>
                     <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Status</th>
+                    <th className="text-right text-gray-400 text-sm px-6 py-4 font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingDocs ? (
-                    <tr><td colSpan={5} className="text-center text-gray-400 py-8">Carregando...</td></tr>
+                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">Carregando...</td></tr>
                   ) : documentos.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center text-gray-400 py-8">Nenhum documento encontrado</td></tr>
+                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">Nenhum documento encontrado</td></tr>
                   ) : (
                     documentos.map((doc) => (
                       <tr key={doc.id} className="border-b border-gray-800 hover:bg-gray-800 transition">
@@ -213,6 +268,14 @@ function EmpresaDetalhe() {
                             {doc.status}
                           </span>
                         </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => downloadXml(doc.chave_acesso)}
+                              className="bg-gray-800 hover:bg-yellow-400/10 text-yellow-400 border border-gray-700 hover:border-yellow-400 text-xs px-3 py-1.5 rounded-lg transition">XML</button>
+                            <button onClick={() => downloadPdf(doc.chave_acesso)}
+                              className="bg-gray-800 hover:bg-blue-400/10 text-blue-400 border border-gray-700 hover:border-blue-400 text-xs px-3 py-1.5 rounded-lg transition">PDF</button>
+                          </div>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -220,19 +283,14 @@ function EmpresaDetalhe() {
               </table>
             </div>
 
-            {/* Paginação */}
             {totalPaginas > 1 && (
               <div className="flex items-center justify-between mt-4">
                 <p className="text-gray-400 text-sm">Página {pagina} de {totalPaginas}</p>
                 <div className="flex gap-2">
                   <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={pagina === 1}
-                    className="bg-gray-900 text-white px-4 py-2 rounded-lg border border-gray-800 hover:border-yellow-400 transition disabled:opacity-50">
-                    ← Anterior
-                  </button>
+                    className="bg-gray-900 text-white px-4 py-2 rounded-lg border border-gray-800 hover:border-yellow-400 transition disabled:opacity-50">← Anterior</button>
                   <button onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={pagina === totalPaginas}
-                    className="bg-gray-900 text-white px-4 py-2 rounded-lg border border-gray-800 hover:border-yellow-400 transition disabled:opacity-50">
-                    Próxima →
-                  </button>
+                    className="bg-gray-900 text-white px-4 py-2 rounded-lg border border-gray-800 hover:border-yellow-400 transition disabled:opacity-50">Próxima →</button>
                 </div>
               </div>
             )}
@@ -262,36 +320,30 @@ function EmpresaDetalhe() {
         {/* Aba Credenciais */}
         {abaAtiva === 'credenciais' && (
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+
+            {/* Client ID */}
             <div>
               <p className="text-gray-400 text-sm mb-2">Client ID</p>
               <div className="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-3">
                 <code className="text-yellow-400 text-sm flex-1 break-all">{empresa.client_id}</code>
-                <button
-                  onClick={() => copiar(empresa.client_id, 'client_id')}
-                  className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap"
-                >
+                <button onClick={() => copiar(empresa.client_id, 'client_id')} className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap">
                   {copiado === 'client_id' ? '✅ Copiado' : 'Copiar'}
                 </button>
               </div>
             </div>
 
+            {/* Client Secret */}
             <div>
               <p className="text-gray-400 text-sm mb-2">Client Secret</p>
               <div className="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-3">
                 <code className="text-yellow-400 text-sm flex-1 break-all">
                   {mostrarSecret ? empresa.client_secret : '••••••••••••••••••••••••••••••••'}
                 </code>
-                <button
-                  onClick={() => setMostrarSecret(!mostrarSecret)}
-                  className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap"
-                >
+                <button onClick={() => setMostrarSecret(!mostrarSecret)} className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap">
                   {mostrarSecret ? 'Ocultar' : 'Revelar'}
                 </button>
                 {mostrarSecret && (
-                  <button
-                    onClick={() => copiar(empresa.client_secret, 'client_secret')}
-                    className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap"
-                  >
+                  <button onClick={() => copiar(empresa.client_secret, 'client_secret')} className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap">
                     {copiado === 'client_secret' ? '✅ Copiado' : 'Copiar'}
                   </button>
                 )}
@@ -299,6 +351,106 @@ function EmpresaDetalhe() {
             </div>
 
             <p className="text-gray-500 text-xs">⚠️ Mantenha essas credenciais em segurança. Use-as para configurar o coletor desktop.</p>
+
+            {/* Certificado Digital */}
+            <div className="border-t border-gray-800 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-white text-sm font-medium">Certificado Digital (A1)</p>
+                {!empresa.certificado_validade && (
+                  <span className="text-xs text-gray-500">Nenhum certificado cadastrado</span>
+                )}
+              </div>
+
+              {empresa.certificado_validade ? (
+                /* Tabela estilo referência */
+                <div className="rounded-xl border border-gray-700 overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-700 bg-gray-800/50">
+                        <th className="text-left text-gray-400 text-xs px-5 py-3 font-medium">Empresa Registrada</th>
+                        <th className="text-left text-gray-400 text-xs px-5 py-3 font-medium">Data Validade</th>
+                        <th className="text-left text-gray-400 text-xs px-5 py-3 font-medium">Status</th>
+                        <th className="text-right text-gray-400 text-xs px-5 py-3 font-medium">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="hover:bg-gray-800/40 transition">
+                        <td className="px-5 py-4 text-white text-sm">
+                          {empresa.nome_fantasia} · {empresa.cnpj}
+                        </td>
+                        <td className="px-5 py-4 text-sm text-gray-300">
+                          {new Date(empresa.certificado_validade + 'T00:00:00').toLocaleDateString('pt-BR')}
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${certVencido ? 'bg-red-400/10 text-red-400' : 'bg-green-400/10 text-green-400'}`}>
+                            {certVencido ? 'Vencido' : 'Válido'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-3">
+                            <button onClick={downloadCertificado}
+                              className="text-xs text-gray-400 hover:text-yellow-400 transition">
+                              ⬇ Baixar
+                            </button>
+                            {!confirmarRemocao ? (
+                              <button onClick={() => setConfirmarRemocao(true)}
+                                className="text-xs text-red-400 hover:text-red-300 transition">
+                                🗑 Remover
+                              </button>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-400">Confirmar remoção?</span>
+                                <button onClick={removerCertificado} disabled={removendoCert}
+                                  className="text-xs text-red-400 hover:text-red-300 font-medium transition disabled:opacity-50">
+                                  {removendoCert ? '...' : 'Sim'}
+                                </button>
+                                <button onClick={() => setConfirmarRemocao(false)}
+                                  className="text-xs text-gray-400 hover:text-white transition">
+                                  Não
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                /* Formulário de upload */
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-gray-400 text-xs mb-1 block">Arquivo .pfx</label>
+                    <input type="file" accept=".pfx,.p12"
+                      onChange={(e) => { setCertArquivo(e.target.files[0]); setCertMsg(null) }}
+                      className="w-full bg-gray-800 text-gray-300 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-yellow-400/10 file:text-yellow-400 file:text-xs cursor-pointer" />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-xs mb-1 block">Senha do certificado</label>
+                    <div className="flex items-center gap-2">
+                      <input type={mostrarSenhaCert ? 'text' : 'password'} value={certSenha}
+                        onChange={(e) => { setCertSenha(e.target.value); setCertMsg(null) }}
+                        placeholder="Digite a senha do .pfx"
+                        className="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm" />
+                      <button onClick={() => setMostrarSenhaCert(!mostrarSenhaCert)}
+                        className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap">
+                        {mostrarSenhaCert ? 'Ocultar' : 'Revelar'}
+                      </button>
+                    </div>
+                  </div>
+                  {certMsg && (
+                    <p className={`text-xs ${certMsg.tipo === 'sucesso' ? 'text-green-400' : 'text-red-400'}`}>
+                      {certMsg.tipo === 'sucesso' ? '✅' : '❌'} {certMsg.texto}
+                    </p>
+                  )}
+                  <button onClick={enviarCertificado} disabled={enviandoCert}
+                    className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">
+                    {enviandoCert ? 'Enviando...' : 'Enviar certificado'}
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
         )}
       </div>

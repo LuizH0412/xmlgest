@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from apps.empresas.models import Empresa
 from apps.usuarios.serializers import UsuarioResumoSerializer
+from cryptography.hazmat.primitives.serialization import pkcs12
+from .crypto import criptografar_senha
 
 class EmpresaSerializer(serializers.ModelSerializer):
     cadastrado_por = UsuarioResumoSerializer(read_only=True)
@@ -37,7 +39,26 @@ class EmpresaCertificadoSerializer(serializers.ModelSerializer):
             try:
                 pfx_bytes = pfx.read()
                 pfx.seek(0)
-                pkcs12.load_key_and_certificates(pfx_bytes, senha.encode())
+                _, cert, _ = pkcs12.load_key_and_certificates(pfx_bytes, senha.encode())
+
+                # Verifica CNPJ do certificado com o CNPJ da empresa
+                from cryptography.x509.oid import NameOID
+                subject = cert.subject
+                cn = subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+                # CN da NFe vem no formato "NOME EMPRESA:12345678000199"
+                cnpj_cert = cn.split(':')[-1].strip() if ':' in cn else ''
+                cnpj_empresa = self.instance.cnpj if self.instance else ''
+                # Normaliza removendo pontuação
+                cnpj_cert_num = ''.join(filter(str.isdigit, cnpj_cert))
+                cnpj_empresa_num = ''.join(filter(str.isdigit, cnpj_empresa))
+
+                if cnpj_cert_num and cnpj_empresa_num and cnpj_cert_num != cnpj_empresa_num:
+                    raise serializers.ValidationError(
+                        f'O certificado pertence ao CNPJ {cnpj_cert_num}, mas a empresa possui o CNPJ {cnpj_empresa_num}.'
+                    )
+
+            except serializers.ValidationError:
+                raise
             except Exception:
                 raise serializers.ValidationError('Certificado ou senha inválidos.')
 
