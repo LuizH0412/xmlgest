@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Empresas from './pages/Empresas'
 import Documentos from './pages/Documentos'
 import EmpresaDetalhe from './pages/EmpresaDetalhe'
+import Usuarios from './pages/Usuarios'
 
 function App() {
   return (
@@ -33,13 +34,16 @@ function App() {
               <EmpresaDetalhe />
             </ProtectedRoute>
           } />
+          <Route path="/usuarios" element={
+            <ProtectedRoute roles={['admin', 'supervisao']}>
+              <Usuarios />
+            </ProtectedRoute>
+          } />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
   )
 }
-
-
 
 export default App

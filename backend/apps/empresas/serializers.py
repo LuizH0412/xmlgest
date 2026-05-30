@@ -12,6 +12,9 @@ class EmpresaSerializer(serializers.ModelSerializer):
         fields = ['id', 'cnpj', 'razao_social', 'nome_fantasia', 'inscricao_estadual', 'codigo_interno',
         'desativado', 'desativado_em', 'criado_em', 'atualizado_em', 'cadastrado_por', 'atualizado_por']
 
+    def validate_cnpj(self, value):
+        return ''.join(filter(str.isdigit, value))
+
 
 class EmpresaResumoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -36,31 +39,31 @@ class EmpresaCertificadoSerializer(serializers.ModelSerializer):
         senha = attrs.get('senha')
 
         if pfx and senha:
+            # 1. Tenta carregar o .pfx — se falhar, a senha está errada
             try:
                 pfx_bytes = pfx.read()
                 pfx.seek(0)
                 _, cert, _ = pkcs12.load_key_and_certificates(pfx_bytes, senha.encode())
+            except Exception:
+                raise serializers.ValidationError(
+                    {'senha': 'Senha incorreta ou arquivo .pfx inválido.'}
+                )
 
-                # Verifica CNPJ do certificado com o CNPJ da empresa
+            # 2. Carregou com sucesso — agora verifica o CNPJ
+            try:
                 from cryptography.x509.oid import NameOID
-                subject = cert.subject
-                cn = subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-                # CN da NFe vem no formato "NOME EMPRESA:12345678000199"
-                cnpj_cert = cn.split(':')[-1].strip() if ':' in cn else ''
-                cnpj_empresa = self.instance.cnpj if self.instance else ''
-                # Normaliza removendo pontuação
-                cnpj_cert_num = ''.join(filter(str.isdigit, cnpj_cert))
-                cnpj_empresa_num = ''.join(filter(str.isdigit, cnpj_empresa))
+                cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+                cnpj_cert = ''.join(filter(str.isdigit, cn.split(':')[-1].strip() if ':' in cn else ''))
+                cnpj_empresa = ''.join(filter(str.isdigit, self.instance.cnpj if self.instance else ''))
 
-                if cnpj_cert_num and cnpj_empresa_num and cnpj_cert_num != cnpj_empresa_num:
+                if cnpj_cert and cnpj_empresa and cnpj_cert != cnpj_empresa:
                     raise serializers.ValidationError(
-                        f'O certificado pertence ao CNPJ {cnpj_cert_num}, mas a empresa possui o CNPJ {cnpj_empresa_num}.'
+                        {'cnpj': f'CNPJ do certificado ({cnpj_cert}) não corresponde ao CNPJ da empresa ({cnpj_empresa}).'}
                     )
-
             except serializers.ValidationError:
                 raise
             except Exception:
-                raise serializers.ValidationError('Certificado ou senha inválidos.')
+                pass  # Se não conseguir ler o CN, deixa passar
 
         return attrs
 

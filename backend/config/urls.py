@@ -9,6 +9,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from apps.empresas.views_auth import ColetorTokenView
 from apps.empresas.views import empresas_sem_xml, empresa_por_codigo
+from apps.usuarios.views import CustomTokenObtainPairView
 
 router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet, basename='usuarios')
@@ -18,7 +19,7 @@ router.register(r'documentos', DocumentoViewSet, basename='documentos')
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/token/coletor/', ColetorTokenView.as_view(), name='token_coletor'),
     path('api/alertas/empresas-sem-xml/', empresas_sem_xml),

@@ -2,7 +2,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 function Navbar() {
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -12,6 +12,7 @@ function Navbar() {
   }
 
   const isActive = (path) => location.pathname === path
+  const podeVerUsuarios = ['admin', 'supervisao'].includes(user?.perfil)
 
   return (
     <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
@@ -36,7 +37,16 @@ function Navbar() {
         >
           Empresas
         </Link>
+        {podeVerUsuarios && (
+          <Link
+            to="/usuarios"
+            className={`text-sm font-medium transition ${isActive('/usuarios') ? 'text-yellow-400' : 'text-gray-400 hover:text-white'}`}
+          >
+            Usuários
+          </Link>
+        )}
       </div>
+
       {/* Logout */}
       <button
         onClick={handleLogout}

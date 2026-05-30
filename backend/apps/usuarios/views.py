@@ -4,6 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Usuario
 from .serializers import UsuarioSerializer
 from core.permissions import IsAdminOrSupervisao
+from rest_framework_simplejwt.views import TokenObtainPairView
+from .serializers import CustomTokenObtainPairSerializer
 
 class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = Usuario.objects.all()
@@ -23,3 +25,6 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(cadastrado_por=self.request.user)
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer

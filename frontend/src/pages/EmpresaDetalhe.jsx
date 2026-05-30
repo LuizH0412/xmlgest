@@ -2,10 +2,14 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import api from '../services/api'
+import { useAuth } from '../context/AuthContext'
 
 function EmpresaDetalhe() {
   const { codigo } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const podeDesativar = ['admin', 'supervisao'].includes(user?.perfil)
+
   const [empresa, setEmpresa] = useState(null)
   const [documentos, setDocumentos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -20,6 +24,9 @@ function EmpresaDetalhe() {
   const [pagina, setPagina] = useState(1)
   const [total, setTotal] = useState(0)
 
+  // Relatório
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(null) // 'pdf' | 'excel' | null
+
   // Certificado
   const [certArquivo, setCertArquivo] = useState(null)
   const [certSenha, setCertSenha] = useState('')
@@ -28,6 +35,17 @@ function EmpresaDetalhe() {
   const [certMsg, setCertMsg] = useState(null)
   const [removendoCert, setRemovendoCert] = useState(false)
   const [confirmarRemocao, setConfirmarRemocao] = useState(false)
+
+  // Modal de edição
+  const [modalEditarAberto, setModalEditarAberto] = useState(false)
+  const [formEditar, setFormEditar] = useState({})
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false)
+  const [errosEdicao, setErrosEdicao] = useState({})
+  const [erroGeralEdicao, setErroGeralEdicao] = useState('')
+
+  // Desativar/reativar empresa
+  const [confirmarDesativar, setConfirmarDesativar] = useState(false)
+  const [desativando, setDesativando] = useState(false)
 
   useEffect(() => {
     const carregarEmpresa = async () => {
@@ -79,6 +97,38 @@ function EmpresaDetalhe() {
     setPagina(1)
   }
 
+  const buildFiltrosQuery = () => {
+    let q = `empresa=${empresa.id}`
+    if (filtroTipo) q += `&tipo=${filtroTipo}`
+    if (filtroDataInicio) q += `&data_emissao__gte=${filtroDataInicio}`
+    if (filtroDataFim) q += `&data_emissao__lte=${filtroDataFim}`
+    return q
+  }
+
+  const downloadRelatorio = async (formato) => {
+    setGerandoRelatorio(formato)
+    try {
+      const url = `/documentos/relatorio/${formato}/?${buildFiltrosQuery()}`
+      const res = await api.get(url, { responseType: 'blob' })
+      const blob = new Blob([res.data], {
+        type: formato === 'pdf'
+          ? 'application/pdf'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+      const link = document.createElement('a')
+      link.href = window.URL.createObjectURL(blob)
+      link.setAttribute('download', `relatorio_${empresa.codigo_interno}.${formato === 'pdf' ? 'pdf' : 'xlsx'}`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(link.href)
+    } catch {
+      alert(`Erro ao gerar relatório ${formato.toUpperCase()}.`)
+    } finally {
+      setGerandoRelatorio(null)
+    }
+  }
+
   const downloadXml = async (chaveAcesso) => {
     try {
       const res = await api.get(`/documentos/${chaveAcesso}/download-xml/`, { responseType: 'blob' })
@@ -127,8 +177,13 @@ function EmpresaDetalhe() {
       const empresaAtualizada = await api.get(`/empresas/codigo/${codigo}/`)
       setEmpresa(empresaAtualizada.data)
     } catch (err) {
-      const detalhe = err.response?.data?.detail || 'Erro ao enviar certificado.'
-      setCertMsg({ tipo: 'erro', texto: detalhe })
+      const data = err.response?.data
+      let texto = 'Erro ao enviar certificado.'
+      if (data?.senha) texto = data.senha
+      else if (data?.cnpj) texto = data.cnpj
+      else if (data?.detail) texto = data.detail
+      else if (data?.non_field_errors) texto = data.non_field_errors[0]
+      setCertMsg({ tipo: 'erro', texto })
     } finally {
       setEnviandoCert(false)
     }
@@ -162,6 +217,74 @@ function EmpresaDetalhe() {
     }
   }
 
+  // Edição
+  const abrirModalEditar = () => {
+    setFormEditar({
+      razao_social: empresa.razao_social || '',
+      nome_fantasia: empresa.nome_fantasia || '',
+      inscricao_estadual: empresa.inscricao_estadual || '',
+      email_contabilidade: empresa.email_contabilidade || '',
+    })
+    setErrosEdicao({})
+    setErroGeralEdicao('')
+    setModalEditarAberto(true)
+  }
+
+  const fecharModalEditar = () => {
+    if (salvandoEdicao) return
+    setModalEditarAberto(false)
+  }
+
+  const handleChangeEditar = (e) => {
+    setFormEditar(f => ({ ...f, [e.target.name]: e.target.value }))
+    setErrosEdicao(er => ({ ...er, [e.target.name]: '' }))
+  }
+
+  const salvarEdicao = async () => {
+    setSalvandoEdicao(true)
+    setErrosEdicao({})
+    setErroGeralEdicao('')
+    try {
+      await api.patch(`/empresas/${empresa.codigo_interno}/`, formEditar)
+      const empresaAtualizada = await api.get(`/empresas/codigo/${codigo}/`)
+      setEmpresa(empresaAtualizada.data)
+      setModalEditarAberto(false)
+    } catch (err) {
+      if (err.response?.data) {
+        const data = err.response.data
+        const camposConhecidos = ['razao_social', 'nome_fantasia', 'inscricao_estadual', 'email_contabilidade']
+        const novosErros = {}
+        camposConhecidos.forEach(campo => {
+          if (data[campo]) novosErros[campo] = Array.isArray(data[campo]) ? data[campo][0] : data[campo]
+        })
+        if (Object.keys(novosErros).length > 0) {
+          setErrosEdicao(novosErros)
+        } else {
+          setErroGeralEdicao(data.detail || 'Erro ao salvar alterações.')
+        }
+      } else {
+        setErroGeralEdicao('Erro de conexão.')
+      }
+    } finally {
+      setSalvandoEdicao(false)
+    }
+  }
+
+  // Desativar / Reativar
+  const toggleDesativar = async () => {
+    setDesativando(true)
+    try {
+      await api.patch(`/empresas/${empresa.codigo_interno}/`, { desativado: !empresa.desativado })
+      const empresaAtualizada = await api.get(`/empresas/codigo/${codigo}/`)
+      setEmpresa(empresaAtualizada.data)
+      setConfirmarDesativar(false)
+    } catch {
+      alert('Erro ao alterar status da empresa.')
+    } finally {
+      setDesativando(false)
+    }
+  }
+
   const temFiltrosAtivos = filtroTipo || filtroDataInicio || filtroDataFim
   const totalPaginas = Math.ceil(total / 20)
 
@@ -185,14 +308,53 @@ function EmpresaDetalhe() {
             <h1 className="text-white text-2xl font-bold">{empresa.nome_fantasia}</h1>
             <p className="text-gray-400 text-sm mt-1">Código: {empresa.codigo_interno} · CNPJ: {empresa.cnpj}</p>
           </div>
-          <span className={`ml-auto text-xs px-3 py-1 rounded-full font-medium ${empresa.desativado ? 'bg-red-400/10 text-red-400' : 'bg-green-400/10 text-green-400'}`}>
-            {empresa.desativado ? 'Inativa' : 'Ativa'}
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className={`text-xs px-3 py-1 rounded-full font-medium ${empresa.desativado ? 'bg-red-400/10 text-red-400' : 'bg-green-400/10 text-green-400'}`}>
+              {empresa.desativado ? 'Inativa' : 'Ativa'}
+            </span>
+            {podeDesativar && (
+              !confirmarDesativar ? (
+                <button
+                  onClick={() => setConfirmarDesativar(true)}
+                  className={`text-sm font-medium px-4 py-1.5 rounded-lg border transition ${
+                    empresa.desativado
+                      ? 'border-green-400/30 text-green-400 hover:bg-green-400/10'
+                      : 'border-red-400/30 text-red-400 hover:bg-red-400/10'
+                  }`}
+                >
+                  {empresa.desativado ? 'Reativar' : 'Desativar'}
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs">
+                    {empresa.desativado ? 'Reativar empresa?' : 'Desativar empresa?'}
+                  </span>
+                  <button
+                    onClick={toggleDesativar}
+                    disabled={desativando}
+                    className={`text-xs font-medium px-3 py-1 rounded-lg transition disabled:opacity-50 ${
+                      empresa.desativado
+                        ? 'bg-green-400/10 text-green-400 hover:bg-green-400/20'
+                        : 'bg-red-400/10 text-red-400 hover:bg-red-400/20'
+                    }`}
+                  >
+                    {desativando ? '...' : 'Sim'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmarDesativar(false)}
+                    className="text-xs text-gray-400 hover:text-white transition"
+                  >
+                    Não
+                  </button>
+                </div>
+              )
+            )}
+          </div>
         </div>
 
         {/* Abas */}
         <div className="flex gap-1 mb-6 bg-gray-900 rounded-lg p-1 w-fit border border-gray-800">
-          {['documentos', 'informacoes', 'credenciais'].map((aba) => (
+          {['documentos', 'informacoes', ...(empresa.desativado ? [] : ['credenciais'])].map((aba) => (
             <button key={aba} onClick={() => setAbaAtiva(aba)}
               className={`px-4 py-2 rounded-md text-sm font-medium transition ${abaAtiva === aba ? 'bg-yellow-400 text-gray-900' : 'text-gray-400 hover:text-white'}`}>
               {aba === 'informacoes' ? 'Informações' : aba === 'credenciais' ? 'Credenciais' : 'Documentos'}
@@ -229,7 +391,27 @@ function EmpresaDetalhe() {
                 {temFiltrosAtivos && (
                   <button onClick={limparFiltros} className="text-gray-400 hover:text-red-400 text-sm transition self-end pb-2">Limpar filtros</button>
                 )}
-                <span className="ml-auto text-gray-400 text-sm self-end pb-2">{total} documento{total !== 1 ? 's' : ''}</span>
+                <div className="ml-auto flex items-center gap-2 self-end">
+                  <span className="text-gray-400 text-sm">{total} documento{total !== 1 ? 's' : ''}</span>
+                  {total > 0 && (
+                    <>
+                      <button
+                        onClick={() => downloadRelatorio('excel')}
+                        disabled={!!gerandoRelatorio}
+                        className="bg-gray-800 hover:bg-green-400/10 text-green-400 border border-gray-700 hover:border-green-400 text-xs px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                      >
+                        {gerandoRelatorio === 'excel' ? 'Gerando...' : '⬇ Excel'}
+                      </button>
+                      <button
+                        onClick={() => downloadRelatorio('pdf')}
+                        disabled={!!gerandoRelatorio}
+                        className="bg-gray-800 hover:bg-red-400/10 text-red-400 border border-gray-700 hover:border-red-400 text-xs px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                      >
+                        {gerandoRelatorio === 'pdf' ? 'Gerando...' : '⬇ PDF'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -299,21 +481,34 @@ function EmpresaDetalhe() {
 
         {/* Aba Informações */}
         {abaAtiva === 'informacoes' && (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
-            {[
-              { label: 'Razão Social', value: empresa.razao_social },
-              { label: 'Nome Fantasia', value: empresa.nome_fantasia },
-              { label: 'CNPJ', value: empresa.cnpj },
-              { label: 'Inscrição Estadual', value: empresa.inscricao_estadual || '—' },
-              { label: 'Email da Contabilidade', value: empresa.email_contabilidade || '—' },
-              { label: 'Código Interno', value: empresa.codigo_interno },
-              { label: 'Cadastrado em', value: new Date(empresa.criado_em).toLocaleDateString('pt-BR') },
-            ].map((item) => (
-              <div key={item.label} className="flex justify-between border-b border-gray-800 pb-4">
-                <span className="text-gray-400 text-sm">{item.label}</span>
-                <span className="text-white text-sm font-medium">{item.value}</span>
+          <div>
+            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-white text-sm font-medium">Dados da Empresa</p>
+                {!empresa.desativado && (
+                  <button
+                    onClick={abrirModalEditar}
+                    className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-medium px-4 py-2 rounded-lg transition"
+                  >
+                    ✏️ Editar
+                  </button>
+                )}
               </div>
-            ))}
+              {[
+                { label: 'Razão Social', value: empresa.razao_social },
+                { label: 'Nome Fantasia', value: empresa.nome_fantasia },
+                { label: 'CNPJ', value: empresa.cnpj },
+                { label: 'Inscrição Estadual', value: empresa.inscricao_estadual || '—' },
+                { label: 'Email da Contabilidade', value: empresa.email_contabilidade || '—' },
+                { label: 'Código Interno', value: empresa.codigo_interno },
+                { label: 'Cadastrado em', value: new Date(empresa.criado_em).toLocaleDateString('pt-BR') },
+              ].map((item) => (
+                <div key={item.label} className="flex justify-between border-b border-gray-800 pb-4">
+                  <span className="text-gray-400 text-sm">{item.label}</span>
+                  <span className="text-white text-sm font-medium">{item.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -321,7 +516,6 @@ function EmpresaDetalhe() {
         {abaAtiva === 'credenciais' && (
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
 
-            {/* Client ID */}
             <div>
               <p className="text-gray-400 text-sm mb-2">Client ID</p>
               <div className="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-3">
@@ -332,7 +526,6 @@ function EmpresaDetalhe() {
               </div>
             </div>
 
-            {/* Client Secret */}
             <div>
               <p className="text-gray-400 text-sm mb-2">Client Secret</p>
               <div className="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-3">
@@ -352,7 +545,6 @@ function EmpresaDetalhe() {
 
             <p className="text-gray-500 text-xs">⚠️ Mantenha essas credenciais em segurança. Use-as para configurar o coletor desktop.</p>
 
-            {/* Certificado Digital */}
             <div className="border-t border-gray-800 pt-6">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-white text-sm font-medium">Certificado Digital (A1)</p>
@@ -362,7 +554,6 @@ function EmpresaDetalhe() {
               </div>
 
               {empresa.certificado_validade ? (
-                /* Tabela estilo referência */
                 <div className="rounded-xl border border-gray-700 overflow-hidden">
                   <table className="w-full">
                     <thead>
@@ -375,9 +566,7 @@ function EmpresaDetalhe() {
                     </thead>
                     <tbody>
                       <tr className="hover:bg-gray-800/40 transition">
-                        <td className="px-5 py-4 text-white text-sm">
-                          {empresa.nome_fantasia} · {empresa.cnpj}
-                        </td>
+                        <td className="px-5 py-4 text-white text-sm">{empresa.nome_fantasia} · {empresa.cnpj}</td>
                         <td className="px-5 py-4 text-sm text-gray-300">
                           {new Date(empresa.certificado_validade + 'T00:00:00').toLocaleDateString('pt-BR')}
                         </td>
@@ -388,15 +577,9 @@ function EmpresaDetalhe() {
                         </td>
                         <td className="px-5 py-4 text-right">
                           <div className="flex items-center justify-end gap-3">
-                            <button onClick={downloadCertificado}
-                              className="text-xs text-gray-400 hover:text-yellow-400 transition">
-                              ⬇ Baixar
-                            </button>
+                            <button onClick={downloadCertificado} className="text-xs text-gray-400 hover:text-yellow-400 transition">⬇ Baixar</button>
                             {!confirmarRemocao ? (
-                              <button onClick={() => setConfirmarRemocao(true)}
-                                className="text-xs text-red-400 hover:text-red-300 transition">
-                                🗑 Remover
-                              </button>
+                              <button onClick={() => setConfirmarRemocao(true)} className="text-xs text-red-400 hover:text-red-300 transition">🗑 Remover</button>
                             ) : (
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-gray-400">Confirmar remoção?</span>
@@ -404,10 +587,7 @@ function EmpresaDetalhe() {
                                   className="text-xs text-red-400 hover:text-red-300 font-medium transition disabled:opacity-50">
                                   {removendoCert ? '...' : 'Sim'}
                                 </button>
-                                <button onClick={() => setConfirmarRemocao(false)}
-                                  className="text-xs text-gray-400 hover:text-white transition">
-                                  Não
-                                </button>
+                                <button onClick={() => setConfirmarRemocao(false)} className="text-xs text-gray-400 hover:text-white transition">Não</button>
                               </div>
                             )}
                           </div>
@@ -417,7 +597,6 @@ function EmpresaDetalhe() {
                   </table>
                 </div>
               ) : (
-                /* Formulário de upload */
                 <div className="space-y-3">
                   <div>
                     <label className="text-gray-400 text-xs mb-1 block">Arquivo .pfx</label>
@@ -450,10 +629,56 @@ function EmpresaDetalhe() {
                 </div>
               )}
             </div>
-
           </div>
         )}
       </div>
+
+      {/* Modal Editar Empresa */}
+      {modalEditarAberto && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={fecharModalEditar}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-gray-800">
+              <h2 className="text-white font-semibold text-lg">Editar Empresa</h2>
+              <button onClick={fecharModalEditar} className="text-gray-400 hover:text-white transition text-xl leading-none">×</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">Razão Social <span className="text-red-400">*</span></label>
+                <input name="razao_social" value={formEditar.razao_social} onChange={handleChangeEditar}
+                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${errosEdicao.razao_social ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`} />
+                {errosEdicao.razao_social && <p className="text-red-400 text-xs mt-1">{errosEdicao.razao_social}</p>}
+              </div>
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">Nome Fantasia <span className="text-red-400">*</span></label>
+                <input name="nome_fantasia" value={formEditar.nome_fantasia} onChange={handleChangeEditar}
+                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${errosEdicao.nome_fantasia ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`} />
+                {errosEdicao.nome_fantasia && <p className="text-red-400 text-xs mt-1">{errosEdicao.nome_fantasia}</p>}
+              </div>
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">Inscrição Estadual</label>
+                <input name="inscricao_estadual" value={formEditar.inscricao_estadual} onChange={handleChangeEditar}
+                  placeholder="Opcional"
+                  className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm transition" />
+              </div>
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">Email da Contabilidade</label>
+                <input name="email_contabilidade" type="email" value={formEditar.email_contabilidade} onChange={handleChangeEditar}
+                  placeholder="contabilidade@exemplo.com"
+                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${errosEdicao.email_contabilidade ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`} />
+                {errosEdicao.email_contabilidade && <p className="text-red-400 text-xs mt-1">{errosEdicao.email_contabilidade}</p>}
+              </div>
+              <p className="text-gray-600 text-xs">CNPJ e Código Interno não podem ser alterados.</p>
+              {erroGeralEdicao && <p className="text-red-400 text-xs">❌ {erroGeralEdicao}</p>}
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-800">
+              <button onClick={fecharModalEditar} disabled={salvandoEdicao} className="text-gray-400 hover:text-white text-sm transition disabled:opacity-50">Cancelar</button>
+              <button onClick={salvarEdicao} disabled={salvandoEdicao} className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-medium px-5 py-2 rounded-lg transition disabled:opacity-50">
+                {salvandoEdicao ? 'Salvando...' : 'Salvar alterações'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -213,7 +213,7 @@ function Empresas() {
                   >
                     <td className="px-6 py-4 text-yellow-400 font-mono text-sm">{empresa.codigo_interno}</td>
                     <td className="px-6 py-4 text-white font-medium">{empresa.nome_fantasia}</td>
-                    <td className="px-6 py-4 text-gray-400 text-sm">{empresa.cnpj}</td>
+                    <td className="px-6 py-4 text-gray-400 text-sm">{empresa.cnpj.replace(/\D/g, '')}</td>
                     <td className="px-6 py-4">
                       {empresa.desativado ? (
                         <span className="bg-red-400/10 text-red-400 text-xs px-2 py-1 rounded-full">Inativa</span>
@@ -247,8 +247,14 @@ function Empresas() {
 
       {/* Modal Nova Empresa */}
       {modalAberto && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4"
+          onClick={fecharModal}
+        >
+          <div
+            className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
 
             <div className="flex items-center justify-between p-6 border-b border-gray-800">
               <h2 className="text-white font-semibold text-lg">Nova Empresa</h2>
