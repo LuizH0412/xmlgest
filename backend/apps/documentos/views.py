@@ -11,11 +11,13 @@ from apps.empresas.models import Empresa
 from .services import extrair_dados
 from .filters import DocumentoFilter
 from django.utils import timezone
+import pandas as pd
 from apps.empresas.authentication import ColetorUser
 import os
 from django.http import FileResponse, HttpResponse
 from brazilfiscalreport.danfe import Danfe
 import io
+from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from reportlab.lib.pagesizes import A4, landscape
@@ -360,3 +362,106 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             content_type='application/pdf',
             headers={'Content-Disposition': 'attachment; filename="relatorio_documentos.pdf"'}
         )
+    
+    @action(detail=False, methods=['post'], url_path='inconsistencias', parser_classes=[MultiPartParser])
+    def inconsistencias(self, request):
+        arquivo = request.FILES.get('arquivo')
+        empresa_id = request.query_params.get('empresa')
+
+        if not arquivo:
+            return Response({'detail': 'Nenhum arquivo enviado.'}, status=400)
+        if not empresa_id:
+            return Response({'detail': 'Parâmetro empresa é obrigatório.'}, status=400)
+
+        try:
+            empresa = Empresa.objects.get(id=empresa_id)
+        except Empresa.DoesNotExist:
+            return Response({'detail': 'Empresa não encontrada.'}, status=404)
+
+        # Lê o XLS da SEFAZ
+        try:
+            conteudo = arquivo.read()
+            df = pd.read_excel(BytesIO(conteudo), engine='xlrd', header=5)
+            df.columns = [str(c).strip() for c in df.columns]
+
+            # Renomeia colunas relevantes
+            col_map = {
+                'NUMERO NOTA FISCAL': 'numero',
+                'SÉRIE': 'serie',
+                'SITUAÇÃO': 'situacao',
+                'CHAVE DE ACESSO': 'chave_acesso',
+                'DATA EMISSÃO': 'data_emissao',
+                'VALR TOTAL NOTA FISCAL': 'valor_total',
+            }
+            df = df.rename(columns=col_map)
+            df = df[list(col_map.values())].dropna(subset=['numero', 'serie'])
+            df['numero'] = df['numero'].astype(int)
+            df['serie'] = df['serie'].astype(int).astype(str)
+            df['situacao'] = df['situacao'].astype(str).str.strip()
+        except Exception as e:
+            return Response({'detail': f'Erro ao ler planilha: {str(e)}'}, status=400)
+
+        # Notas do sistema para essa empresa
+        docs_sistema = Documento.objects.filter(empresa=empresa).values(
+            'numero_nota', 'serie', 'chave_acesso', 'status', 'data_emissao', 'valor_total'
+        )
+        sistema_map = {
+            (str(d['serie']), str(int(d['numero_nota']))): d
+            for d in docs_sistema
+        }
+
+        # Notas da SEFAZ
+        sefaz_notas = set()
+        faltando_no_sistema = []
+        for _, row in df.iterrows():
+            key = (str(row['serie']), str(row['numero']))
+            sefaz_notas.add(key)
+            if key not in sistema_map:
+                faltando_no_sistema.append({
+                    'numero': str(row['numero']),
+                    'serie': str(row['serie']),
+                    'situacao': row['situacao'],
+                    'chave_acesso': str(row.get('chave_acesso', '')),
+                    'data_emissao': str(row.get('data_emissao', '')),
+                    'valor_total': str(row.get('valor_total', '')),
+                })
+
+        # Notas no sistema que não estão na SEFAZ
+        extras_no_sistema = []
+        for (serie, numero), doc in sistema_map.items():
+            if (serie, numero) not in sefaz_notas:
+                extras_no_sistema.append({
+                    'numero': numero,
+                    'serie': serie,
+                    'status': doc['status'],
+                    'chave_acesso': doc['chave_acesso'],
+                    'data_emissao': str(doc['data_emissao']),
+                    'valor_total': str(doc['valor_total']),
+                })
+
+        # Gaps na sequência por série
+        gaps = []
+        series_sefaz = {}
+        for (serie, numero) in sefaz_notas:
+            series_sefaz.setdefault(serie, []).append(int(numero))
+
+        for serie, numeros in series_sefaz.items():
+            numeros_sorted = sorted(numeros)
+            for i in range(len(numeros_sorted) - 1):
+                atual = numeros_sorted[i]
+                proximo = numeros_sorted[i + 1]
+                if proximo - atual > 1:
+                    for faltante in range(atual + 1, proximo):
+                        gaps.append({
+                            'serie': serie,
+                            'numero': faltante,
+                            'entre': f'{atual} e {proximo}',
+                        })
+
+        return Response({
+            'empresa': empresa.nome_fantasia,
+            'total_sefaz': len(df),
+            'faltando_no_sistema': faltando_no_sistema,
+            'extras_no_sistema': extras_no_sistema,
+            'gaps_sequencia': gaps,
+        })
