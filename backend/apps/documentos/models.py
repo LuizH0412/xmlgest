@@ -1,6 +1,7 @@
 from django.db import models
 from apps.empresas.models import Empresa
 from django.conf import settings
+import uuid
 
 
 class TipoChoices(models.TextChoices):
@@ -68,3 +69,16 @@ class ItemDocumento(models.Model):
 
     class Meta:
         ordering = ['numero_item']
+
+
+class ExportacaoXml(models.Model):
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.SET_NULL, related_name='exportacoes', null=True, blank=True
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    caminho_arquivo = models.CharField(max_length=500)
+    label_periodo = models.CharField(max_length=100)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-criado_em']

@@ -139,3 +139,5 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(hour=6, minute=0, day_of_month=1),
     },
 }
+
+SITE_URL = 'http://localhost:8000'

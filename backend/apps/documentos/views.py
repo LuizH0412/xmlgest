@@ -28,6 +28,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from decimal import Decimal
 import zipfile
+from apps.documentos.models import ExportacaoXml
 
 
 class DocumentoViewSet(viewsets.ModelViewSet):
@@ -39,7 +40,9 @@ class DocumentoViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'create', 'upload']:
+        if self.action == 'download_export':
+            return []
+        if self.action in ['list', 'retrieve', 'create', 'upload', 'enviar_xmls']:
             return [IsAuthenticated()]
         return [IsAdmin()]
 
@@ -370,7 +373,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             conteudo = arquivo.read()
             df_raw = pd.read_excel(BytesIO(conteudo), engine='xlrd', header=None)
 
-            # Encontra a linha do cabeçalho
             header_row = None
             for i, row in df_raw.iterrows():
                 row_str = ' '.join([str(v).upper() for v in row.values if pd.notna(v)])
@@ -381,7 +383,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             if header_row is None:
                 return Response({'detail': 'Formato de planilha não reconhecido. Verifique se é uma planilha da SEFAZ.'}, status=400)
 
-            # Valida o CNPJ da planilha contra o CNPJ da empresa
             cnpj_planilha = None
             for i, row in df_raw.iterrows():
                 if i >= header_row:
@@ -404,11 +405,8 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                     }, status=400)
 
             df = pd.read_excel(BytesIO(conteudo), engine='xlrd', header=header_row)
-
-            # Normaliza nomes das colunas
             df.columns = [str(c).strip().upper() for c in df.columns]
 
-            # Mapeia para nomes padronizados
             col_map = {}
             for col in df.columns:
                 if 'NUMERO' in col and 'NOTA' in col:
@@ -443,7 +441,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'detail': f'Erro ao ler planilha: {str(e)}'}, status=400)
 
-        # Detecta o período coberto pela planilha da SEFAZ
         data_min = None
         data_max = None
         if 'data_emissao' in df.columns:
@@ -452,7 +449,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                 data_min = datas.min().date()
                 data_max = datas.max().date()
 
-        # Notas do sistema para essa empresa, filtradas pelo período da planilha
         docs_qs = Documento.objects.filter(empresa=empresa)
         if data_min and data_max:
             docs_qs = docs_qs.filter(data_emissao__gte=data_min, data_emissao__lte=data_max)
@@ -465,7 +461,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             for d in docs_sistema
         }
 
-        # Notas da SEFAZ
         sefaz_notas = set()
         faltando_no_sistema = []
         for _, row in df.iterrows():
@@ -481,7 +476,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                     'valor_total': str(row.get('valor_total', '')),
                 })
 
-        # Notas no sistema que não estão na SEFAZ
         extras_no_sistema = []
         for (serie, numero), doc in sistema_map.items():
             if (serie, numero) not in sefaz_notas:
@@ -494,7 +488,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                     'valor_total': str(doc['valor_total']),
                 })
 
-        # Saltos na sequência por série
         gaps = []
         series_sefaz = {}
         for (serie, numero) in sefaz_notas:
@@ -524,7 +517,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             'extras_no_sistema': extras_no_sistema,
             'gaps_sequencia': gaps,
         })
-    
+
     @action(detail=False, methods=['post'], url_path='enviar-xmls')
     def enviar_xmls(self, request):
         empresa_id = request.query_params.get('empresa')
@@ -541,12 +534,22 @@ class DocumentoViewSet(viewsets.ModelViewSet):
 
         data_inicio = request.query_params.get('data_emissao__gte')
         data_fim = request.query_params.get('data_emissao__lte')
+        tipo = request.query_params.get('tipo')
+        serie = request.query_params.get('serie')
+        numero_nota = request.query_params.get('numero_nota')
 
         from apps.documentos.tasks import enviar_xmls_empresa
-        enviar_xmls_empresa.delay(empresa_id, data_inicio=data_inicio, data_fim=data_fim)
+        enviar_xmls_empresa.delay(
+            empresa_id,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            tipo=tipo,
+            serie=serie,
+            numero_nota=numero_nota,
+        )
 
         return Response({'detail': 'Envio iniciado com sucesso.'})
-    
+
     @action(detail=False, methods=['get'], url_path='download-xmls')
     def download_xmls(self, request):
         queryset = self.filter_queryset(self.get_queryset())
@@ -570,4 +573,21 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             zip_buffer,
             content_type='application/zip',
             headers={'Content-Disposition': 'attachment; filename="xmls.zip"'}
-    )
+        )
+
+    @action(detail=False, methods=['get'], url_path='download-export/(?P<token>[^/.]+)', permission_classes=[])
+    def download_export(self, request, token=None):
+        try:
+            exportacao = ExportacaoXml.objects.get(token=token)
+        except ExportacaoXml.DoesNotExist:
+            return Response({'detail': 'Link inválido.'}, status=404)
+
+        if not os.path.exists(exportacao.caminho_arquivo):
+            return Response({'detail': 'Arquivo não encontrado.'}, status=404)
+
+        return FileResponse(
+            open(exportacao.caminho_arquivo, 'rb'),
+            as_attachment=True,
+            filename=os.path.basename(exportacao.caminho_arquivo),
+            content_type='application/zip'
+        )

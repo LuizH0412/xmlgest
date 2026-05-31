@@ -19,3 +19,7 @@ db.sqlite3
 # Sistema operacional
 Thumbs.db
 .DS_Store
+
+# Media
+media/
+
