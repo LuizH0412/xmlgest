@@ -10,5 +10,5 @@ class DocumentoFilter(django_filters.FilterSet):
             'status': ['exact'],
             'numero_nota': ['exact'],
             'serie': ['exact'],
-            'data_emissao': ['exact', 'year', 'month', 'day'],
+            'data_emissao': ['exact', 'gte', 'lte', 'year', 'month', 'day'],
         }

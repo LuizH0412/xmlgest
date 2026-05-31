@@ -4,6 +4,105 @@ import Navbar from '../components/Navbar'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
+const hoje = new Date()
+const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0]
+const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0]
+
+// ─── Button Primitives ────────────────────────────────────────────────────────
+
+/** Solid action button — primary CTA */
+function BtnPrimary({ children, onClick, disabled, className = '' }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-yellow-400 hover:bg-yellow-300 active:bg-yellow-500 text-gray-900 text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Ghost button — muted default */
+function BtnGhost({ children, onClick, disabled, className = '' }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-gray-700 text-gray-300 text-xs font-medium bg-transparent hover:bg-gray-800 hover:border-gray-600 hover:text-white active:bg-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Colored ghost button for semantic meaning */
+function BtnAccent({ children, onClick, disabled, color = 'yellow', className = '' }) {
+  const colors = {
+    yellow: 'border-yellow-500/40 text-yellow-400 hover:bg-yellow-400/10 hover:border-yellow-400',
+    green:  'border-green-500/40  text-green-400  hover:bg-green-400/10  hover:border-green-400',
+    red:    'border-red-500/40    text-red-400    hover:bg-red-400/10    hover:border-red-400',
+    blue:   'border-blue-500/40   text-blue-400   hover:bg-blue-400/10   hover:border-blue-400',
+    purple: 'border-purple-500/40 text-purple-400 hover:bg-purple-400/10 hover:border-purple-400',
+    orange: 'border-orange-500/40 text-orange-400 hover:bg-orange-400/10 hover:border-orange-400',
+  }
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border text-xs font-medium bg-transparent transition-all disabled:opacity-40 disabled:cursor-not-allowed ${colors[color]} ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Danger/confirm inline pair */
+function BtnDanger({ children, onClick, disabled, className = '' }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-xs font-medium bg-transparent hover:bg-red-400/10 hover:border-red-400 transition-all disabled:opacity-40 ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Small icon-only button */
+function BtnIcon({ children, onClick, title, className = '' }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`p-1.5 rounded-md text-gray-500 hover:text-white hover:bg-gray-700 transition-all ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ─── Reusable: Status badge ───────────────────────────────────────────────────
+
+function Badge({ children, color = 'gray' }) {
+  const colors = {
+    green:  'bg-green-400/10 text-green-400',
+    red:    'bg-red-400/10 text-red-400',
+    yellow: 'bg-yellow-400/10 text-yellow-400',
+    orange: 'bg-orange-400/10 text-orange-400',
+    gray:   'bg-gray-700 text-gray-300',
+    blue:   'bg-blue-400/10 text-blue-400',
+  }
+  return (
+    <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${colors[color]}`}>
+      {children}
+    </span>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 function EmpresaDetalhe() {
   const { codigo } = useParams()
   const navigate = useNavigate()
@@ -17,17 +116,24 @@ function EmpresaDetalhe() {
   const [abaAtiva, setAbaAtiva] = useState('documentos')
   const [mostrarSecret, setMostrarSecret] = useState(false)
   const [copiado, setCopiado] = useState('')
+  const [enviandoXmls, setEnviandoXmls] = useState(false)
+  const [msgEnvioXmls, setMsgEnvioXmls] = useState(null)
 
   const [filtroTipo, setFiltroTipo] = useState('')
-  const [filtroDataInicio, setFiltroDataInicio] = useState('')
-  const [filtroDataFim, setFiltroDataFim] = useState('')
+  const [filtroSerie, setFiltroSerie] = useState('')
+  const [filtroNumero, setFiltroNumero] = useState('')
+  const [filtroDataInicio, setFiltroDataInicio] = useState(primeiroDiaMes)
+  const [filtroDataFim, setFiltroDataFim] = useState(ultimoDiaMes)
   const [pagina, setPagina] = useState(1)
   const [total, setTotal] = useState(0)
 
-  // Relatório
-  const [gerandoRelatorio, setGerandoRelatorio] = useState(null) // 'pdf' | 'excel' | null
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(null)
 
-  // Certificado
+  const [arquivoSefaz, setArquivoSefaz] = useState(null)
+  const [analisando, setAnalisando] = useState(false)
+  const [resultadoInconsistencias, setResultadoInconsistencias] = useState(null)
+  const [erroInconsistencia, setErroInconsistencia] = useState('')
+
   const [certArquivo, setCertArquivo] = useState(null)
   const [certSenha, setCertSenha] = useState('')
   const [mostrarSenhaCert, setMostrarSenhaCert] = useState(false)
@@ -36,14 +142,12 @@ function EmpresaDetalhe() {
   const [removendoCert, setRemovendoCert] = useState(false)
   const [confirmarRemocao, setConfirmarRemocao] = useState(false)
 
-  // Modal de edição
   const [modalEditarAberto, setModalEditarAberto] = useState(false)
   const [formEditar, setFormEditar] = useState({})
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
   const [errosEdicao, setErrosEdicao] = useState({})
   const [erroGeralEdicao, setErroGeralEdicao] = useState('')
 
-  // Desativar/reativar empresa
   const [confirmarDesativar, setConfirmarDesativar] = useState(false)
   const [desativando, setDesativando] = useState(false)
 
@@ -68,9 +172,11 @@ function EmpresaDetalhe() {
       setLoadingDocs(true)
       try {
         let url = `/documentos/?empresa=${empresa.id}&page=${pagina}`
-        if (filtroTipo)       url += `&tipo=${filtroTipo}`
+        if (filtroTipo) url += `&tipo=${filtroTipo}`
+        if (filtroSerie) url += `&serie=${filtroSerie}`
+        if (filtroNumero) url += `&numero_nota=${filtroNumero}`
         if (filtroDataInicio) url += `&data_emissao__gte=${filtroDataInicio}`
-        if (filtroDataFim)    url += `&data_emissao__lte=${filtroDataFim}`
+        if (filtroDataFim) url += `&data_emissao__lte=${filtroDataFim}`
         const res = await api.get(url, { signal: controller.signal })
         setDocumentos(res.data.results)
         setTotal(res.data.count)
@@ -82,7 +188,7 @@ function EmpresaDetalhe() {
     }
     carregarDocumentos()
     return () => controller.abort()
-  }, [empresa, pagina, filtroTipo, filtroDataInicio, filtroDataFim])
+  }, [empresa, pagina, filtroTipo, filtroSerie, filtroNumero, filtroDataInicio, filtroDataFim])
 
   const copiar = (texto, campo) => {
     navigator.clipboard.writeText(texto)
@@ -92,14 +198,18 @@ function EmpresaDetalhe() {
 
   const limparFiltros = () => {
     setFiltroTipo('')
-    setFiltroDataInicio('')
-    setFiltroDataFim('')
+    setFiltroSerie('')
+    setFiltroNumero('')
+    setFiltroDataInicio(primeiroDiaMes)
+    setFiltroDataFim(ultimoDiaMes)
     setPagina(1)
   }
 
   const buildFiltrosQuery = () => {
     let q = `empresa=${empresa.id}`
     if (filtroTipo) q += `&tipo=${filtroTipo}`
+    if (filtroSerie) q += `&serie=${filtroSerie}`
+    if (filtroNumero) q += `&numero_nota=${filtroNumero}`
     if (filtroDataInicio) q += `&data_emissao__gte=${filtroDataInicio}`
     if (filtroDataFim) q += `&data_emissao__lte=${filtroDataFim}`
     return q
@@ -155,6 +265,41 @@ function EmpresaDetalhe() {
       link.remove()
       window.URL.revokeObjectURL(url)
     } catch { alert('Erro ao baixar PDF.') }
+  }
+
+  const downloadXmlsZip = async () => {
+    try {
+      const url = `/documentos/download-xmls/?${buildFiltrosQuery()}`
+      const res = await api.get(url, { responseType: 'blob' })
+      const link = document.createElement('a')
+      link.href = window.URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }))
+      link.setAttribute('download', `xmls_${empresa.codigo_interno}.zip`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(link.href)
+    } catch {
+      alert('Erro ao baixar XMLs.')
+    }
+  }
+
+  const analisarInconsistencias = async () => {
+    if (!arquivoSefaz) { setErroInconsistencia('Selecione a planilha da SEFAZ.'); return }
+    setAnalisando(true)
+    setErroInconsistencia('')
+    setResultadoInconsistencias(null)
+    try {
+      const formData = new FormData()
+      formData.append('arquivo', arquivoSefaz)
+      const res = await api.post(`/documentos/inconsistencias/?empresa=${empresa.id}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      setResultadoInconsistencias(res.data)
+    } catch (err) {
+      setErroInconsistencia(err.response?.data?.detail || 'Erro ao analisar planilha.')
+    } finally {
+      setAnalisando(false)
+    }
   }
 
   const enviarCertificado = async () => {
@@ -217,7 +362,6 @@ function EmpresaDetalhe() {
     }
   }
 
-  // Edição
   const abrirModalEditar = () => {
     setFormEditar({
       razao_social: empresa.razao_social || '',
@@ -230,11 +374,7 @@ function EmpresaDetalhe() {
     setModalEditarAberto(true)
   }
 
-  const fecharModalEditar = () => {
-    if (salvandoEdicao) return
-    setModalEditarAberto(false)
-  }
-
+  const fecharModalEditar = () => { if (!salvandoEdicao) setModalEditarAberto(false) }
   const handleChangeEditar = (e) => {
     setFormEditar(f => ({ ...f, [e.target.name]: e.target.value }))
     setErrosEdicao(er => ({ ...er, [e.target.name]: '' }))
@@ -257,11 +397,8 @@ function EmpresaDetalhe() {
         camposConhecidos.forEach(campo => {
           if (data[campo]) novosErros[campo] = Array.isArray(data[campo]) ? data[campo][0] : data[campo]
         })
-        if (Object.keys(novosErros).length > 0) {
-          setErrosEdicao(novosErros)
-        } else {
-          setErroGeralEdicao(data.detail || 'Erro ao salvar alterações.')
-        }
+        if (Object.keys(novosErros).length > 0) setErrosEdicao(novosErros)
+        else setErroGeralEdicao(data.detail || 'Erro ao salvar alterações.')
       } else {
         setErroGeralEdicao('Erro de conexão.')
       }
@@ -270,7 +407,6 @@ function EmpresaDetalhe() {
     }
   }
 
-  // Desativar / Reativar
   const toggleDesativar = async () => {
     setDesativando(true)
     try {
@@ -285,65 +421,86 @@ function EmpresaDetalhe() {
     }
   }
 
-  const temFiltrosAtivos = filtroTipo || filtroDataInicio || filtroDataFim
+  const enviarXmlsManual = async () => {
+    setEnviandoXmls(true)
+    setMsgEnvioXmls(null)
+    try {
+        await api.post(`/documentos/enviar-xmls/?${buildFiltrosQuery()}`)
+        setMsgEnvioXmls({ tipo: 'sucesso', texto: 'XMLs enviados para o email da contabilidade.' })
+    } catch (err) {
+        const detalhe = err.response?.data?.detail || 'Erro ao enviar XMLs.'
+        setMsgEnvioXmls({ tipo: 'erro', texto: detalhe })
+    } finally {
+        setEnviandoXmls(false)
+      }
+  } 
+
+  const temFiltrosAtivos = filtroTipo || filtroSerie || filtroNumero ||
+    filtroDataInicio !== primeiroDiaMes || filtroDataFim !== ultimoDiaMes
   const totalPaginas = Math.ceil(total / 20)
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <p className="text-yellow-400">Carregando...</p>
+      <p className="text-yellow-400 text-sm animate-pulse">Carregando...</p>
     </div>
   )
 
   const certVencido = empresa.certificado_validade && new Date(empresa.certificado_validade) < new Date()
+  const abas = ['documentos', 'informacoes', 'inconsistencias', ...(empresa.desativado ? [] : ['credenciais'])]
+  const abaLabels = { documentos: 'Documentos', informacoes: 'Informações', inconsistencias: 'Inconsistências', credenciais: 'Credenciais' }
+
+  // ─── Input class helper ────────────────────────────────────────────────────
+  const inputCls = (erro) =>
+    `w-full bg-gray-800/60 text-white rounded-lg px-3 py-2 border text-sm transition focus:outline-none ${
+      erro ? 'border-red-500/60 focus:border-red-400' : 'border-gray-700 focus:border-yellow-400/70'
+    }`
 
   return (
     <div className="min-h-screen bg-gray-950">
       <Navbar />
       <div className="max-w-7xl mx-auto px-6 py-8">
 
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
-          <button onClick={() => navigate('/empresas')} className="text-gray-400 hover:text-white transition text-sm">← Voltar</button>
-          <div>
-            <h1 className="text-white text-2xl font-bold">{empresa.nome_fantasia}</h1>
-            <p className="text-gray-400 text-sm mt-1">Código: {empresa.codigo_interno} · CNPJ: {empresa.cnpj}</p>
+        {/* ── Header ── */}
+        <div className="flex items-start gap-4 mb-7">
+          <button
+            onClick={() => navigate('/empresas')}
+            className="mt-1 text-gray-500 hover:text-gray-300 transition text-sm flex items-center gap-1"
+          >
+            ← Voltar
+          </button>
+
+          <div className="flex-1">
+            <h1 className="text-white text-2xl font-bold tracking-tight">{empresa.nome_fantasia}</h1>
+            <p className="text-gray-500 text-sm mt-0.5">
+              Código: <span className="text-gray-400">{empresa.codigo_interno}</span>
+              {' · '}
+              CNPJ: <span className="text-gray-400">{empresa.cnpj}</span>
+            </p>
           </div>
-          <div className="ml-auto flex items-center gap-3">
-            <span className={`text-xs px-3 py-1 rounded-full font-medium ${empresa.desativado ? 'bg-red-400/10 text-red-400' : 'bg-green-400/10 text-green-400'}`}>
+
+          <div className="flex items-center gap-3 mt-1">
+            <Badge color={empresa.desativado ? 'red' : 'green'}>
               {empresa.desativado ? 'Inativa' : 'Ativa'}
-            </span>
+            </Badge>
+
             {podeDesativar && (
               !confirmarDesativar ? (
-                <button
-                  onClick={() => setConfirmarDesativar(true)}
-                  className={`text-sm font-medium px-4 py-1.5 rounded-lg border transition ${
-                    empresa.desativado
-                      ? 'border-green-400/30 text-green-400 hover:bg-green-400/10'
-                      : 'border-red-400/30 text-red-400 hover:bg-red-400/10'
-                  }`}
-                >
-                  {empresa.desativado ? 'Reativar' : 'Desativar'}
-                </button>
+                empresa.desativado
+                  ? <BtnAccent color="green" onClick={() => setConfirmarDesativar(true)}>Reativar</BtnAccent>
+                  : <BtnDanger onClick={() => setConfirmarDesativar(true)}>Desativar</BtnDanger>
               ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400 text-xs">
-                    {empresa.desativado ? 'Reativar empresa?' : 'Desativar empresa?'}
-                  </span>
+                <div className="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5">
+                  <span className="text-gray-400 text-xs">{empresa.desativado ? 'Reativar?' : 'Desativar?'}</span>
                   <button
                     onClick={toggleDesativar}
                     disabled={desativando}
-                    className={`text-xs font-medium px-3 py-1 rounded-lg transition disabled:opacity-50 ${
-                      empresa.desativado
-                        ? 'bg-green-400/10 text-green-400 hover:bg-green-400/20'
-                        : 'bg-red-400/10 text-red-400 hover:bg-red-400/20'
+                    className={`text-xs font-semibold px-2 py-0.5 rounded transition disabled:opacity-50 ${
+                      empresa.desativado ? 'text-green-400 hover:text-green-300' : 'text-red-400 hover:text-red-300'
                     }`}
                   >
                     {desativando ? '...' : 'Sim'}
                   </button>
-                  <button
-                    onClick={() => setConfirmarDesativar(false)}
-                    className="text-xs text-gray-400 hover:text-white transition"
-                  >
+                  <button onClick={() => setConfirmarDesativar(false)} className="text-xs text-gray-500 hover:text-white transition">
                     Não
                   </button>
                 </div>
@@ -352,25 +509,40 @@ function EmpresaDetalhe() {
           </div>
         </div>
 
-        {/* Abas */}
-        <div className="flex gap-1 mb-6 bg-gray-900 rounded-lg p-1 w-fit border border-gray-800">
-          {['documentos', 'informacoes', ...(empresa.desativado ? [] : ['credenciais'])].map((aba) => (
-            <button key={aba} onClick={() => setAbaAtiva(aba)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${abaAtiva === aba ? 'bg-yellow-400 text-gray-900' : 'text-gray-400 hover:text-white'}`}>
-              {aba === 'informacoes' ? 'Informações' : aba === 'credenciais' ? 'Credenciais' : 'Documentos'}
+        {/* ── Tabs ── */}
+        <div className="flex gap-0.5 mb-6 bg-gray-900/60 rounded-xl p-1 w-fit border border-gray-800">
+          {abas.map((aba) => (
+            <button
+              key={aba}
+              onClick={() => setAbaAtiva(aba)}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+                abaAtiva === aba
+                  ? 'bg-yellow-400 text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              {abaLabels[aba]}
             </button>
           ))}
         </div>
 
-        {/* Aba Documentos */}
+        {/* ══════════════════════════════════════════
+            Aba: Documentos
+        ══════════════════════════════════════════ */}
         {abaAtiva === 'documentos' && (
           <div>
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-4">
+            {/* Filter bar */}
+            <div className="bg-gray-900/60 rounded-xl border border-gray-800 px-5 py-4 mb-4">
               <div className="flex flex-wrap gap-3 items-end">
+
+                {/* Tipo */}
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Tipo</label>
-                  <select value={filtroTipo} onChange={(e) => { setFiltroTipo(e.target.value); setPagina(1) }}
-                    className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm">
+                  <label className="text-gray-500 text-xs mb-1.5 block">Tipo</label>
+                  <select
+                    value={filtroTipo}
+                    onChange={(e) => { setFiltroTipo(e.target.value); setPagina(1) }}
+                    className="bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
+                  >
                     <option value="">Todos</option>
                     <option value="NFe">NFe</option>
                     <option value="NFCe">NFCe</option>
@@ -378,84 +550,164 @@ function EmpresaDetalhe() {
                     <option value="MDFe">MDFe</option>
                   </select>
                 </div>
+
+                {/* Série */}
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Período</label>
+                  <label className="text-gray-500 text-xs mb-1.5 block">Série</label>
+                  <input
+                    type="text"
+                    value={filtroSerie}
+                    onChange={(e) => { setFiltroSerie(e.target.value); setPagina(1) }}
+                    placeholder="Ex: 1"
+                    className="w-20 bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
+                  />
+                </div>
+
+                {/* Número */}
+                <div>
+                  <label className="text-gray-500 text-xs mb-1.5 block">Número</label>
+                  <input
+                    type="text"
+                    value={filtroNumero}
+                    onChange={(e) => { setFiltroNumero(e.target.value); setPagina(1) }}
+                    placeholder="Ex: 1468"
+                    className="w-28 bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
+                  />
+                </div>
+
+                {/* Período */}
+                <div>
+                  <label className="text-gray-500 text-xs mb-1.5 block">Período</label>
                   <div className="flex items-center gap-2">
-                    <input type="date" value={filtroDataInicio} onChange={(e) => { setFiltroDataInicio(e.target.value); setPagina(1) }}
-                      className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm" />
-                    <span className="text-gray-500 text-sm">→</span>
-                    <input type="date" value={filtroDataFim} min={filtroDataInicio || undefined} onChange={(e) => { setFiltroDataFim(e.target.value); setPagina(1) }}
-                      className="bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm" />
+                    <input
+                      type="date"
+                      value={filtroDataInicio}
+                      onChange={(e) => { setFiltroDataInicio(e.target.value); setPagina(1) }}
+                      className="bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
+                    />
+                    <span className="text-gray-600 text-sm">→</span>
+                    <input
+                      type="date"
+                      value={filtroDataFim}
+                      min={filtroDataInicio || undefined}
+                      onChange={(e) => { setFiltroDataFim(e.target.value); setPagina(1) }}
+                      className="bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
+                    />
                   </div>
                 </div>
+
                 {temFiltrosAtivos && (
-                  <button onClick={limparFiltros} className="text-gray-400 hover:text-red-400 text-sm transition self-end pb-2">Limpar filtros</button>
+                  <button
+                    onClick={limparFiltros}
+                    className="text-gray-600 hover:text-red-400 text-xs transition self-end pb-2"
+                  >
+                    ✕ Limpar filtros
+                  </button>
                 )}
+
+                {/* Right-side actions */}
                 <div className="ml-auto flex items-center gap-2 self-end">
-                  <span className="text-gray-400 text-sm">{total} documento{total !== 1 ? 's' : ''}</span>
+                  <span className="text-gray-500 text-xs mr-1">
+                    {total} doc{total !== 1 ? 's' : ''}
+                  </span>
+
                   {total > 0 && (
-                    <>
-                      <button
+                    <div className="flex items-center gap-1.5">
+                      {/* Enviar XMLs — distinct purple */}
+                      {empresa.email_contabilidade && (
+                        <BtnAccent
+                          color="purple"
+                          onClick={enviarXmlsManual}
+                          disabled={enviandoXmls}
+                        >
+                          {enviandoXmls ? 'Enviando…' : '✉ Enviar XMLs'}
+                        </BtnAccent>
+                      )}
+
+                      {/* Separator */}
+                      <div className="w-px h-5 bg-gray-700 mx-0.5" />
+
+                      {/* Downloads group */}
+                      <BtnAccent
+                        color="green"
                         onClick={() => downloadRelatorio('excel')}
                         disabled={!!gerandoRelatorio}
-                        className="bg-gray-800 hover:bg-green-400/10 text-green-400 border border-gray-700 hover:border-green-400 text-xs px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                       >
-                        {gerandoRelatorio === 'excel' ? 'Gerando...' : '⬇ Excel'}
-                      </button>
-                      <button
+                        {gerandoRelatorio === 'excel' ? '…' : '↓ Excel'}
+                      </BtnAccent>
+
+                      <BtnAccent
+                        color="red"
                         onClick={() => downloadRelatorio('pdf')}
                         disabled={!!gerandoRelatorio}
-                        className="bg-gray-800 hover:bg-red-400/10 text-red-400 border border-gray-700 hover:border-red-400 text-xs px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                       >
-                        {gerandoRelatorio === 'pdf' ? 'Gerando...' : '⬇ PDF'}
-                      </button>
-                    </>
+                        {gerandoRelatorio === 'pdf' ? '…' : '↓ PDF'}
+                      </BtnAccent>
+
+                      <BtnAccent
+                        color="yellow"
+                        onClick={downloadXmlsZip}
+                      >
+                        ↓ XMLs
+                      </BtnAccent>
+                    </div>
                   )}
                 </div>
               </div>
+
+              {msgEnvioXmls && (
+                <p className={`text-xs mt-3 ${msgEnvioXmls.tipo === 'sucesso' ? 'text-green-400' : 'text-red-400'}`}>
+                  {msgEnvioXmls.tipo === 'sucesso' ? '✓' : '✕'} {msgEnvioXmls.texto}
+                </p>
+              )}
             </div>
 
-            <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+            {/* Table */}
+            <div className="bg-gray-900/60 rounded-xl border border-gray-800 overflow-hidden">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-800">
-                    <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Número</th>
-                    <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Tipo</th>
-                    <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Emissão</th>
-                    <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Valor</th>
-                    <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Status</th>
-                    <th className="text-right text-gray-400 text-sm px-6 py-4 font-medium">Ações</th>
+                    {['Número', 'Série', 'Tipo', 'Emissão', 'Valor', 'Status', ''].map((h) => (
+                      <th
+                        key={h}
+                        className={`text-gray-500 text-xs px-6 py-3.5 font-medium tracking-wide ${h === '' ? 'text-right' : 'text-left'}`}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {loadingDocs ? (
-                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">Carregando...</td></tr>
+                    <tr>
+                      <td colSpan={7} className="text-center text-gray-500 py-10 text-sm animate-pulse">Carregando…</td>
+                    </tr>
                   ) : documentos.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">Nenhum documento encontrado</td></tr>
+                    <tr>
+                      <td colSpan={7} className="text-center text-gray-500 py-10 text-sm">Nenhum documento encontrado</td>
+                    </tr>
                   ) : (
                     documentos.map((doc) => (
-                      <tr key={doc.id} className="border-b border-gray-800 hover:bg-gray-800 transition">
-                        <td className="px-6 py-4 text-white font-mono text-sm">{doc.numero_nota}</td>
-                        <td className="px-6 py-4">
-                          <span className="bg-yellow-400/10 text-yellow-400 text-xs px-2 py-1 rounded-full">{doc.tipo}</span>
+                      <tr key={doc.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 transition">
+                        <td className="px-6 py-3.5 text-white font-mono text-sm">{doc.numero_nota}</td>
+                        <td className="px-6 py-3.5 text-gray-500 text-sm">{doc.serie}</td>
+                        <td className="px-6 py-3.5">
+                          <Badge color="yellow">{doc.tipo}</Badge>
                         </td>
-                        <td className="px-6 py-4 text-gray-400 text-sm">
+                        <td className="px-6 py-3.5 text-gray-400 text-sm">
                           {new Date(doc.data_emissao + 'T00:00:00').toLocaleDateString('pt-BR')}
                         </td>
-                        <td className="px-6 py-4 text-white text-sm">
+                        <td className="px-6 py-3.5 text-white text-sm">
                           R$ {parseFloat(doc.valor_total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={`text-xs px-2 py-1 rounded-full ${doc.status === 'autorizado' ? 'bg-green-400/10 text-green-400' : 'bg-red-400/10 text-red-400'}`}>
-                            {doc.status}
-                          </span>
+                        <td className="px-6 py-3.5">
+                          <Badge color={doc.status === 'autorizado' ? 'green' : 'red'}>{doc.status}</Badge>
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex gap-2 justify-end">
-                            <button onClick={() => downloadXml(doc.chave_acesso)}
-                              className="bg-gray-800 hover:bg-yellow-400/10 text-yellow-400 border border-gray-700 hover:border-yellow-400 text-xs px-3 py-1.5 rounded-lg transition">XML</button>
-                            <button onClick={() => downloadPdf(doc.chave_acesso)}
-                              className="bg-gray-800 hover:bg-blue-400/10 text-blue-400 border border-gray-700 hover:border-blue-400 text-xs px-3 py-1.5 rounded-lg transition">PDF</button>
+                        <td className="px-6 py-3.5">
+                          {/* Row-level actions: compact ghost pair */}
+                          <div className="flex gap-1.5 justify-end">
+                            <BtnGhost onClick={() => downloadXml(doc.chave_acesso)}>XML</BtnGhost>
+                            <BtnGhost onClick={() => downloadPdf(doc.chave_acesso)}>PDF</BtnGhost>
                           </div>
                         </td>
                       </tr>
@@ -465,35 +717,38 @@ function EmpresaDetalhe() {
               </table>
             </div>
 
+            {/* Pagination */}
             {totalPaginas > 1 && (
               <div className="flex items-center justify-between mt-4">
-                <p className="text-gray-400 text-sm">Página {pagina} de {totalPaginas}</p>
+                <p className="text-gray-500 text-sm">
+                  Página <span className="text-gray-300">{pagina}</span> de {totalPaginas}
+                </p>
                 <div className="flex gap-2">
-                  <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={pagina === 1}
-                    className="bg-gray-900 text-white px-4 py-2 rounded-lg border border-gray-800 hover:border-yellow-400 transition disabled:opacity-50">← Anterior</button>
-                  <button onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={pagina === totalPaginas}
-                    className="bg-gray-900 text-white px-4 py-2 rounded-lg border border-gray-800 hover:border-yellow-400 transition disabled:opacity-50">Próxima →</button>
+                  <BtnGhost onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={pagina === 1}>
+                    ← Anterior
+                  </BtnGhost>
+                  <BtnGhost onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={pagina === totalPaginas}>
+                    Próxima →
+                  </BtnGhost>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Aba Informações */}
+        {/* ══════════════════════════════════════════
+            Aba: Informações
+        ══════════════════════════════════════════ */}
         {abaAtiva === 'informacoes' && (
-          <div>
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-white text-sm font-medium">Dados da Empresa</p>
-                {!empresa.desativado && (
-                  <button
-                    onClick={abrirModalEditar}
-                    className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-medium px-4 py-2 rounded-lg transition"
-                  >
-                    ✏️ Editar
-                  </button>
-                )}
-              </div>
+          <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6">
+            <div className="flex items-center justify-between mb-5">
+              <p className="text-white text-sm font-semibold">Dados da Empresa</p>
+              {!empresa.desativado && (
+                <BtnPrimary onClick={abrirModalEditar}>✏ Editar</BtnPrimary>
+              )}
+            </div>
+
+            <div className="space-y-0">
               {[
                 { label: 'Razão Social', value: empresa.razao_social },
                 { label: 'Nome Fantasia', value: empresa.nome_fantasia },
@@ -503,91 +758,272 @@ function EmpresaDetalhe() {
                 { label: 'Código Interno', value: empresa.codigo_interno },
                 { label: 'Cadastrado em', value: new Date(empresa.criado_em).toLocaleDateString('pt-BR') },
               ].map((item) => (
-                <div key={item.label} className="flex justify-between border-b border-gray-800 pb-4">
-                  <span className="text-gray-400 text-sm">{item.label}</span>
-                  <span className="text-white text-sm font-medium">{item.value}</span>
+                <div key={item.label} className="flex justify-between py-3.5 border-b border-gray-800/70 last:border-0">
+                  <span className="text-gray-500 text-sm">{item.label}</span>
+                  <span className="text-gray-200 text-sm font-medium">{item.value}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Aba Credenciais */}
+        {/* ══════════════════════════════════════════
+            Aba: Inconsistências
+        ══════════════════════════════════════════ */}
+        {abaAtiva === 'inconsistencias' && (
+          <div className="space-y-5">
+            <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6">
+              <p className="text-white text-sm font-semibold mb-1">Analisar planilha da SEFAZ</p>
+              <p className="text-gray-500 text-xs mb-4">
+                Importe o arquivo .xls exportado do portal da SEFAZ para verificar inconsistências com os documentos do sistema.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="file"
+                  accept=".xls,.xlsx"
+                  onChange={(e) => { setArquivoSefaz(e.target.files[0]); setResultadoInconsistencias(null); setErroInconsistencia('') }}
+                  className="flex-1 bg-gray-800/60 text-gray-400 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-yellow-400/10 file:text-yellow-400 file:text-xs cursor-pointer transition"
+                />
+                <BtnPrimary onClick={analisarInconsistencias} disabled={analisando || !arquivoSefaz}>
+                  {analisando ? 'Analisando…' : 'Analisar'}
+                </BtnPrimary>
+              </div>
+              {erroInconsistencia && (
+                <p className="text-red-400 text-xs mt-3">✕ {erroInconsistencia}</p>
+              )}
+            </div>
+
+            {resultadoInconsistencias && (
+              <div className="space-y-4">
+                {/* Summary cards */}
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { label: 'Notas na SEFAZ', value: resultadoInconsistencias.total_sefaz, color: 'default' },
+                    { label: 'Faltando no sistema', value: resultadoInconsistencias.faltando_no_sistema.length, color: resultadoInconsistencias.faltando_no_sistema.length > 0 ? 'red' : 'green' },
+                    { label: 'Gaps na sequência', value: resultadoInconsistencias.gaps_sequencia.length, color: resultadoInconsistencias.gaps_sequencia.length > 0 ? 'orange' : 'green' },
+                  ].map((card) => (
+                    <div key={card.label} className={`rounded-xl border p-4 text-center ${
+                      card.color === 'red' ? 'bg-red-400/5 border-red-400/20' :
+                      card.color === 'orange' ? 'bg-orange-400/5 border-orange-400/20' :
+                      'bg-gray-900/60 border-gray-800'
+                    }`}>
+                      <p className="text-gray-500 text-xs mb-1">{card.label}</p>
+                      <p className={`text-2xl font-bold ${
+                        card.color === 'red' ? 'text-red-400' :
+                        card.color === 'orange' ? 'text-orange-400' :
+                        card.color === 'green' ? 'text-green-400' :
+                        'text-white'
+                      }`}>{card.value}</p>
+                    </div>
+                  ))}
+                  <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 text-center">
+                    <p className="text-gray-500 text-xs mb-1">Valor total (SEFAZ)</p>
+                    <p className="text-white text-lg font-bold">
+                      {(() => {
+                        const todos = [...resultadoInconsistencias.faltando_no_sistema, ...resultadoInconsistencias.extras_no_sistema]
+                        const total = todos.reduce((acc, item) => {
+                          const v = parseFloat(String(item.valor_total).replace(',', '.'))
+                          return acc + (isNaN(v) ? 0 : v)
+                        }, 0)
+                        return `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                      })()}
+                    </p>
+                  </div>
+                </div>
+
+                {resultadoInconsistencias.faltando_no_sistema.length === 0 &&
+                 resultadoInconsistencias.extras_no_sistema.length === 0 &&
+                 resultadoInconsistencias.gaps_sequencia.length === 0 && (
+                  <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-5 flex items-center gap-3">
+                    <span className="text-xl">✓</span>
+                    <p className="text-green-400 text-sm font-medium">Nenhuma inconsistência encontrada! Todos os documentos estão em conformidade.</p>
+                  </div>
+                )}
+
+                {/* Faltando no sistema */}
+                {resultadoInconsistencias.faltando_no_sistema.length > 0 && (
+                  <div className="bg-gray-900/60 rounded-xl border border-red-400/20 overflow-hidden">
+                    <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
+                      <span className="text-red-400 text-sm font-medium">Notas na SEFAZ ausentes no sistema</span>
+                      <Badge color="red">{resultadoInconsistencias.faltando_no_sistema.length}</Badge>
+                    </div>
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-800">
+                          {['Número', 'Série', 'Situação SEFAZ', 'Data Emissão', 'Valor Total'].map(h => (
+                            <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultadoInconsistencias.faltando_no_sistema.map((item, i) => (
+                          <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
+                            <td className="px-6 py-3 text-white font-mono text-sm">{item.numero}</td>
+                            <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
+                            <td className="px-6 py-3">
+                              <Badge color={item.situacao === 'Autorizada' ? 'green' : 'red'}>{item.situacao}</Badge>
+                            </td>
+                            <td className="px-6 py-3 text-gray-400 text-sm">{item.data_emissao}</td>
+                            <td className="px-6 py-3 text-white text-sm">R$ {item.valor_total}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Extras no sistema */}
+                {resultadoInconsistencias.extras_no_sistema.length > 0 && (
+                  <div className="bg-gray-900/60 rounded-xl border border-yellow-400/20 overflow-hidden">
+                    <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
+                      <span className="text-yellow-400 text-sm font-medium">Notas no sistema ausentes na SEFAZ</span>
+                      <Badge color="yellow">{resultadoInconsistencias.extras_no_sistema.length}</Badge>
+                    </div>
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-800">
+                          {['Número', 'Série', 'Status Sistema', 'Chave de Acesso'].map(h => (
+                            <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultadoInconsistencias.extras_no_sistema.map((item, i) => (
+                          <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
+                            <td className="px-6 py-3 text-white font-mono text-sm">{item.numero}</td>
+                            <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
+                            <td className="px-6 py-3">
+                              <Badge color={item.status === 'autorizado' ? 'green' : 'red'}>{item.status}</Badge>
+                            </td>
+                            <td className="px-6 py-3 text-gray-500 text-xs font-mono">{item.chave_acesso}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Gaps */}
+                {resultadoInconsistencias.gaps_sequencia.length > 0 && (
+                  <div className="bg-gray-900/60 rounded-xl border border-orange-400/20 overflow-hidden">
+                    <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
+                      <span className="text-orange-400 text-sm font-medium">Gaps na sequência numérica da SEFAZ</span>
+                      <Badge color="orange">{resultadoInconsistencias.gaps_sequencia.length}</Badge>
+                    </div>
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-800">
+                          {['Série', 'Número faltante', 'Entre as notas'].map(h => (
+                            <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultadoInconsistencias.gaps_sequencia.map((item, i) => (
+                          <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
+                            <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
+                            <td className="px-6 py-3 text-orange-400 font-mono font-medium text-sm">{item.numero}</td>
+                            <td className="px-6 py-3 text-gray-500 text-sm">{item.entre}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════
+            Aba: Credenciais
+        ══════════════════════════════════════════ */}
         {abaAtiva === 'credenciais' && (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
-
-            <div>
-              <p className="text-gray-400 text-sm mb-2">Client ID</p>
-              <div className="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-3">
-                <code className="text-yellow-400 text-sm flex-1 break-all">{empresa.client_id}</code>
-                <button onClick={() => copiar(empresa.client_id, 'client_id')} className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap">
-                  {copiado === 'client_id' ? '✅ Copiado' : 'Copiar'}
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-gray-400 text-sm mb-2">Client Secret</p>
-              <div className="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-3">
-                <code className="text-yellow-400 text-sm flex-1 break-all">
-                  {mostrarSecret ? empresa.client_secret : '••••••••••••••••••••••••••••••••'}
-                </code>
-                <button onClick={() => setMostrarSecret(!mostrarSecret)} className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap">
-                  {mostrarSecret ? 'Ocultar' : 'Revelar'}
-                </button>
-                {mostrarSecret && (
-                  <button onClick={() => copiar(empresa.client_secret, 'client_secret')} className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap">
-                    {copiado === 'client_secret' ? '✅ Copiado' : 'Copiar'}
+          <div className="space-y-6">
+            <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6 space-y-5">
+              {/* Client ID */}
+              <div>
+                <p className="text-gray-500 text-xs mb-2">Client ID</p>
+                <div className="flex items-center gap-3 bg-gray-800/60 rounded-lg px-4 py-3 border border-gray-700">
+                  <code className="text-yellow-400 text-sm flex-1 break-all">{empresa.client_id}</code>
+                  <button
+                    onClick={() => copiar(empresa.client_id, 'client_id')}
+                    className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap"
+                  >
+                    {copiado === 'client_id' ? '✓ Copiado' : 'Copiar'}
                   </button>
-                )}
+                </div>
               </div>
+
+              {/* Client Secret */}
+              <div>
+                <p className="text-gray-500 text-xs mb-2">Client Secret</p>
+                <div className="flex items-center gap-3 bg-gray-800/60 rounded-lg px-4 py-3 border border-gray-700">
+                  <code className="text-yellow-400 text-sm flex-1 break-all">
+                    {mostrarSecret ? empresa.client_secret : '••••••••••••••••••••••••••••••••'}
+                  </code>
+                  <button
+                    onClick={() => setMostrarSecret(!mostrarSecret)}
+                    className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap"
+                  >
+                    {mostrarSecret ? 'Ocultar' : 'Revelar'}
+                  </button>
+                  {mostrarSecret && (
+                    <button
+                      onClick={() => copiar(empresa.client_secret, 'client_secret')}
+                      className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap"
+                    >
+                      {copiado === 'client_secret' ? '✓ Copiado' : 'Copiar'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-gray-600 text-xs">⚠ Mantenha essas credenciais em segurança. Use-as para configurar o coletor desktop.</p>
             </div>
 
-            <p className="text-gray-500 text-xs">⚠️ Mantenha essas credenciais em segurança. Use-as para configurar o coletor desktop.</p>
-
-            <div className="border-t border-gray-800 pt-6">
+            {/* Certificado */}
+            <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-white text-sm font-medium">Certificado Digital (A1)</p>
-                {!empresa.certificado_validade && (
-                  <span className="text-xs text-gray-500">Nenhum certificado cadastrado</span>
-                )}
+                <p className="text-white text-sm font-semibold">Certificado Digital (A1)</p>
+                {!empresa.certificado_validade && <span className="text-gray-600 text-xs">Nenhum certificado cadastrado</span>}
               </div>
 
               {empresa.certificado_validade ? (
                 <div className="rounded-xl border border-gray-700 overflow-hidden">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-gray-700 bg-gray-800/50">
-                        <th className="text-left text-gray-400 text-xs px-5 py-3 font-medium">Empresa Registrada</th>
-                        <th className="text-left text-gray-400 text-xs px-5 py-3 font-medium">Data Validade</th>
-                        <th className="text-left text-gray-400 text-xs px-5 py-3 font-medium">Status</th>
-                        <th className="text-right text-gray-400 text-xs px-5 py-3 font-medium">Ações</th>
+                      <tr className="border-b border-gray-700 bg-gray-800/40">
+                        {['Empresa Registrada', 'Validade', 'Status', ''].map(h => (
+                          <th key={h} className={`text-gray-500 text-xs px-5 py-3 font-medium ${h === '' ? 'text-right' : 'text-left'}`}>{h}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="hover:bg-gray-800/40 transition">
-                        <td className="px-5 py-4 text-white text-sm">{empresa.nome_fantasia} · {empresa.cnpj}</td>
-                        <td className="px-5 py-4 text-sm text-gray-300">
+                      <tr className="hover:bg-gray-800/30 transition">
+                        <td className="px-5 py-4 text-gray-200 text-sm">{empresa.nome_fantasia} · {empresa.cnpj}</td>
+                        <td className="px-5 py-4 text-gray-300 text-sm">
                           {new Date(empresa.certificado_validade + 'T00:00:00').toLocaleDateString('pt-BR')}
                         </td>
                         <td className="px-5 py-4">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${certVencido ? 'bg-red-400/10 text-red-400' : 'bg-green-400/10 text-green-400'}`}>
-                            {certVencido ? 'Vencido' : 'Válido'}
-                          </span>
+                          <Badge color={certVencido ? 'red' : 'green'}>{certVencido ? 'Vencido' : 'Válido'}</Badge>
                         </td>
                         <td className="px-5 py-4 text-right">
-                          <div className="flex items-center justify-end gap-3">
-                            <button onClick={downloadCertificado} className="text-xs text-gray-400 hover:text-yellow-400 transition">⬇ Baixar</button>
+                          <div className="flex items-center justify-end gap-2">
+                            <BtnGhost onClick={downloadCertificado}>↓ Baixar</BtnGhost>
                             {!confirmarRemocao ? (
-                              <button onClick={() => setConfirmarRemocao(true)} className="text-xs text-red-400 hover:text-red-300 transition">🗑 Remover</button>
+                              <BtnDanger onClick={() => setConfirmarRemocao(true)}>Remover</BtnDanger>
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-400">Confirmar remoção?</span>
-                                <button onClick={removerCertificado} disabled={removendoCert}
-                                  className="text-xs text-red-400 hover:text-red-300 font-medium transition disabled:opacity-50">
-                                  {removendoCert ? '...' : 'Sim'}
+                              <div className="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5">
+                                <span className="text-gray-500 text-xs">Confirmar?</span>
+                                <button
+                                  onClick={removerCertificado}
+                                  disabled={removendoCert}
+                                  className="text-xs text-red-400 hover:text-red-300 font-semibold transition disabled:opacity-50"
+                                >
+                                  {removendoCert ? '…' : 'Sim'}
                                 </button>
-                                <button onClick={() => setConfirmarRemocao(false)} className="text-xs text-gray-400 hover:text-white transition">Não</button>
+                                <button onClick={() => setConfirmarRemocao(false)} className="text-xs text-gray-500 hover:text-white transition">Não</button>
                               </div>
                             )}
                           </div>
@@ -599,33 +1035,40 @@ function EmpresaDetalhe() {
               ) : (
                 <div className="space-y-3">
                   <div>
-                    <label className="text-gray-400 text-xs mb-1 block">Arquivo .pfx</label>
-                    <input type="file" accept=".pfx,.p12"
+                    <label className="text-gray-500 text-xs mb-1.5 block">Arquivo .pfx</label>
+                    <input
+                      type="file"
+                      accept=".pfx,.p12"
                       onChange={(e) => { setCertArquivo(e.target.files[0]); setCertMsg(null) }}
-                      className="w-full bg-gray-800 text-gray-300 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-yellow-400/10 file:text-yellow-400 file:text-xs cursor-pointer" />
+                      className="w-full bg-gray-800/60 text-gray-400 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-yellow-400/10 file:text-yellow-400 file:text-xs cursor-pointer transition"
+                    />
                   </div>
                   <div>
-                    <label className="text-gray-400 text-xs mb-1 block">Senha do certificado</label>
+                    <label className="text-gray-500 text-xs mb-1.5 block">Senha do certificado</label>
                     <div className="flex items-center gap-2">
-                      <input type={mostrarSenhaCert ? 'text' : 'password'} value={certSenha}
+                      <input
+                        type={mostrarSenhaCert ? 'text' : 'password'}
+                        value={certSenha}
                         onChange={(e) => { setCertSenha(e.target.value); setCertMsg(null) }}
                         placeholder="Digite a senha do .pfx"
-                        className="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm" />
-                      <button onClick={() => setMostrarSenhaCert(!mostrarSenhaCert)}
-                        className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap">
+                        className="flex-1 bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
+                      />
+                      <button
+                        onClick={() => setMostrarSenhaCert(!mostrarSenhaCert)}
+                        className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap"
+                      >
                         {mostrarSenhaCert ? 'Ocultar' : 'Revelar'}
                       </button>
                     </div>
                   </div>
                   {certMsg && (
                     <p className={`text-xs ${certMsg.tipo === 'sucesso' ? 'text-green-400' : 'text-red-400'}`}>
-                      {certMsg.tipo === 'sucesso' ? '✅' : '❌'} {certMsg.texto}
+                      {certMsg.tipo === 'sucesso' ? '✓' : '✕'} {certMsg.texto}
                     </p>
                   )}
-                  <button onClick={enviarCertificado} disabled={enviandoCert}
-                    className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">
-                    {enviandoCert ? 'Enviando...' : 'Enviar certificado'}
-                  </button>
+                  <BtnPrimary onClick={enviarCertificado} disabled={enviandoCert}>
+                    {enviandoCert ? 'Enviando…' : 'Enviar certificado'}
+                  </BtnPrimary>
                 </div>
               )}
             </div>
@@ -633,48 +1076,61 @@ function EmpresaDetalhe() {
         )}
       </div>
 
-      {/* Modal Editar Empresa */}
+      {/* ── Modal Editar ── */}
       {modalEditarAberto && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={fecharModalEditar}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-6 border-b border-gray-800">
-              <h2 className="text-white font-semibold text-lg">Editar Empresa</h2>
-              <button onClick={fecharModalEditar} className="text-gray-400 hover:text-white transition text-xl leading-none">×</button>
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4"
+          onClick={fecharModalEditar}
+        >
+          <div
+            className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+              <h2 className="text-white font-semibold">Editar Empresa</h2>
+              <button onClick={fecharModalEditar} className="text-gray-500 hover:text-white transition text-xl leading-none">×</button>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-gray-400 text-xs mb-1 block">Razão Social <span className="text-red-400">*</span></label>
-                <input name="razao_social" value={formEditar.razao_social} onChange={handleChangeEditar}
-                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${errosEdicao.razao_social ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`} />
-                {errosEdicao.razao_social && <p className="text-red-400 text-xs mt-1">{errosEdicao.razao_social}</p>}
-              </div>
-              <div>
-                <label className="text-gray-400 text-xs mb-1 block">Nome Fantasia <span className="text-red-400">*</span></label>
-                <input name="nome_fantasia" value={formEditar.nome_fantasia} onChange={handleChangeEditar}
-                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${errosEdicao.nome_fantasia ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`} />
-                {errosEdicao.nome_fantasia && <p className="text-red-400 text-xs mt-1">{errosEdicao.nome_fantasia}</p>}
-              </div>
-              <div>
-                <label className="text-gray-400 text-xs mb-1 block">Inscrição Estadual</label>
-                <input name="inscricao_estadual" value={formEditar.inscricao_estadual} onChange={handleChangeEditar}
-                  placeholder="Opcional"
-                  className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm transition" />
-              </div>
-              <div>
-                <label className="text-gray-400 text-xs mb-1 block">Email da Contabilidade</label>
-                <input name="email_contabilidade" type="email" value={formEditar.email_contabilidade} onChange={handleChangeEditar}
-                  placeholder="contabilidade@exemplo.com"
-                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${errosEdicao.email_contabilidade ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`} />
-                {errosEdicao.email_contabilidade && <p className="text-red-400 text-xs mt-1">{errosEdicao.email_contabilidade}</p>}
-              </div>
+
+            <div className="px-6 py-5 space-y-4">
+              {[
+                { name: 'razao_social', label: 'Razão Social', required: true },
+                { name: 'nome_fantasia', label: 'Nome Fantasia', required: true },
+                { name: 'inscricao_estadual', label: 'Inscrição Estadual', placeholder: 'Opcional' },
+                { name: 'email_contabilidade', label: 'Email da Contabilidade', type: 'email', placeholder: 'contabilidade@exemplo.com' },
+              ].map((field) => (
+                <div key={field.name}>
+                  <label className="text-gray-500 text-xs mb-1.5 block">
+                    {field.label} {field.required && <span className="text-red-400">*</span>}
+                  </label>
+                  <input
+                    name={field.name}
+                    type={field.type || 'text'}
+                    value={formEditar[field.name] || ''}
+                    onChange={handleChangeEditar}
+                    placeholder={field.placeholder}
+                    className={inputCls(errosEdicao[field.name])}
+                  />
+                  {errosEdicao[field.name] && (
+                    <p className="text-red-400 text-xs mt-1">{errosEdicao[field.name]}</p>
+                  )}
+                </div>
+              ))}
+
               <p className="text-gray-600 text-xs">CNPJ e Código Interno não podem ser alterados.</p>
-              {erroGeralEdicao && <p className="text-red-400 text-xs">❌ {erroGeralEdicao}</p>}
+              {erroGeralEdicao && <p className="text-red-400 text-xs">✕ {erroGeralEdicao}</p>}
             </div>
+
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-800">
-              <button onClick={fecharModalEditar} disabled={salvandoEdicao} className="text-gray-400 hover:text-white text-sm transition disabled:opacity-50">Cancelar</button>
-              <button onClick={salvarEdicao} disabled={salvandoEdicao} className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-medium px-5 py-2 rounded-lg transition disabled:opacity-50">
-                {salvandoEdicao ? 'Salvando...' : 'Salvar alterações'}
+              <button
+                onClick={fecharModalEditar}
+                disabled={salvandoEdicao}
+                className="text-gray-500 hover:text-white text-sm transition disabled:opacity-50"
+              >
+                Cancelar
               </button>
+              <BtnPrimary onClick={salvarEdicao} disabled={salvandoEdicao}>
+                {salvandoEdicao ? 'Salvando…' : 'Salvar alterações'}
+              </BtnPrimary>
             </div>
           </div>
         </div>

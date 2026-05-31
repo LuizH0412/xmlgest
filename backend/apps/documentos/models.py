@@ -45,10 +45,15 @@ class Documento(models.Model):
     )
     criado_em = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['-data_emissao', '-id']
+
 class ItemDocumento(models.Model):
     documento = models.ForeignKey(
         Documento, on_delete=models.CASCADE, related_name='itens'
     )
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.PROTECT, null=False, blank=False, related_name='itens_documentos_empresa')
     numero_item = models.IntegerField()
     descricao = models.CharField(max_length=500)
     ncm = models.CharField(max_length=20, blank=True, null=True)

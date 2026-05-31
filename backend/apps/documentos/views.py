@@ -12,6 +12,7 @@ from .services import extrair_dados
 from .filters import DocumentoFilter
 from django.utils import timezone
 import pandas as pd
+import re
 from apps.empresas.authentication import ColetorUser
 import os
 from django.http import FileResponse, HttpResponse
@@ -26,6 +27,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from decimal import Decimal
+import zipfile
 
 
 class DocumentoViewSet(viewsets.ModelViewSet):
@@ -107,7 +109,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         )
 
         ItemDocumento.objects.bulk_create([
-            ItemDocumento(documento=documento, **item)
+            ItemDocumento(documento=documento, empresa=empresa, **item)
             for item in dados.get('itens', [])
         ])
 
@@ -115,14 +117,14 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             {'detail': 'Documento enviado com sucesso.', 'id': documento.id},
             status=status.HTTP_201_CREATED
         )
-    
+
     @action(detail=True, methods=['get'], url_path='download-xml')
     def download_xml(self, request, chave_acesso=None):
         try:
             documento = Documento.objects.get(chave_acesso=chave_acesso)
         except Documento.DoesNotExist:
             return Response({'detail': 'Documento não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
-        
+
         caminho_completo = os.path.join('media', documento.caminho_arquivo)
 
         if not os.path.exists(caminho_completo):
@@ -165,24 +167,21 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                 'Content-Disposition': f'attachment; filename="{chave_acesso}.pdf"'
             }
         )
-    
+
     @action(detail=False, methods=['get'], url_path='relatorio/excel')
     def relatorio_excel(self, request):
-        # Aplica os mesmos filtros da listagem
         queryset = self.filter_queryset(self.get_queryset())
 
         wb = Workbook()
         ws = wb.active
         ws.title = "Relatório de Documentos"
 
-        # Cabeçalho principal
         ws.merge_cells('A1:G1')
         ws['A1'] = 'Relatório de Documentos Fiscais'
         ws['A1'].font = Font(bold=True, size=14, color='1a1a1a')
         ws['A1'].fill = PatternFill('solid', fgColor='FACC15')
         ws['A1'].alignment = Alignment(horizontal='center')
 
-        # Filtros aplicados
         empresa_id = request.query_params.get('empresa', '')
         tipo = request.query_params.get('tipo', '')
         data_inicio = request.query_params.get('data_emissao__gte', '')
@@ -192,9 +191,8 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         ws['A2'].font = Font(size=9, color='666666')
         ws.merge_cells('A2:G2')
 
-        ws.append([])  # linha vazia
+        ws.append([])
 
-        # Cabeçalhos da tabela
         headers = ['Número', 'Tipo', 'Série', 'Data Emissão', 'Valor Total', 'Status', 'Chave de Acesso']
         ws.append(headers)
         header_row = ws.max_row
@@ -204,7 +202,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             cell.fill = PatternFill('solid', fgColor='1F2937')
             cell.alignment = Alignment(horizontal='center')
 
-        # Dados
         total_valor = Decimal('0')
         total_autorizados = 0
         total_cancelados = 0
@@ -227,11 +224,8 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                 doc.chave_acesso,
             ])
 
-        # Linha em branco antes dos totalizadores
         ws.append([])
 
-        # Totalizadores
-        total_row_start = ws.max_row + 1
         totais = [
             ('Total de Documentos', queryset.count()),
             ('Autorizados', total_autorizados),
@@ -246,7 +240,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                 cell.number_format = 'R$ #,##0.00'
                 cell.font = Font(bold=True, color='15803D')
 
-        # Largura das colunas
         ws.column_dimensions['A'].width = 12
         ws.column_dimensions['B'].width = 8
         ws.column_dimensions['C'].width = 8
@@ -265,7 +258,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             headers={'Content-Disposition': 'attachment; filename="relatorio_documentos.xlsx"'}
         )
 
-
     @action(detail=False, methods=['get'], url_path='relatorio/pdf')
     def relatorio_pdf(self, request):
         queryset = self.filter_queryset(self.get_queryset())
@@ -278,12 +270,10 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         styles = getSampleStyleSheet()
         elements = []
 
-        # Título
         title_style = ParagraphStyle('title', fontSize=16, fontName='Helvetica-Bold',
                                     textColor=colors.HexColor('#1F2937'), spaceAfter=4)
         elements.append(Paragraph('Relatório de Documentos Fiscais', title_style))
 
-        # Filtros
         empresa_id = request.query_params.get('empresa', '')
         tipo = request.query_params.get('tipo', '')
         data_inicio = request.query_params.get('data_emissao__gte', '')
@@ -292,7 +282,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         sub_style = ParagraphStyle('sub', fontSize=8, textColor=colors.HexColor('#6B7280'), spaceAfter=12)
         elements.append(Paragraph(filtros_txt, sub_style))
 
-        # Tabela de documentos
         header = ['Número', 'Tipo', 'Série', 'Emissão', 'Valor Total', 'Status']
         rows = [header]
 
@@ -334,7 +323,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         elements.append(table)
         elements.append(Spacer(1, 0.5*cm))
 
-        # Totalizadores
         total_rows = [
             ['Total de Documentos', str(queryset.count())],
             ['Autorizados', str(total_autorizados)],
@@ -362,7 +350,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             content_type='application/pdf',
             headers={'Content-Disposition': 'attachment; filename="relatorio_documentos.pdf"'}
         )
-    
+
     @action(detail=False, methods=['post'], url_path='inconsistencias', parser_classes=[MultiPartParser])
     def inconsistencias(self, request):
         arquivo = request.FILES.get('arquivo')
@@ -378,31 +366,98 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         except Empresa.DoesNotExist:
             return Response({'detail': 'Empresa não encontrada.'}, status=404)
 
-        # Lê o XLS da SEFAZ
         try:
             conteudo = arquivo.read()
-            df = pd.read_excel(BytesIO(conteudo), engine='xlrd', header=5)
-            df.columns = [str(c).strip() for c in df.columns]
+            df_raw = pd.read_excel(BytesIO(conteudo), engine='xlrd', header=None)
 
-            # Renomeia colunas relevantes
-            col_map = {
-                'NUMERO NOTA FISCAL': 'numero',
-                'SÉRIE': 'serie',
-                'SITUAÇÃO': 'situacao',
-                'CHAVE DE ACESSO': 'chave_acesso',
-                'DATA EMISSÃO': 'data_emissao',
-                'VALR TOTAL NOTA FISCAL': 'valor_total',
-            }
+            # Encontra a linha do cabeçalho
+            header_row = None
+            for i, row in df_raw.iterrows():
+                row_str = ' '.join([str(v).upper() for v in row.values if pd.notna(v)])
+                if 'NUMERO NOTA FISCAL' in row_str:
+                    header_row = i
+                    break
+
+            if header_row is None:
+                return Response({'detail': 'Formato de planilha não reconhecido. Verifique se é uma planilha da SEFAZ.'}, status=400)
+
+            # Valida o CNPJ da planilha contra o CNPJ da empresa
+            cnpj_planilha = None
+            for i, row in df_raw.iterrows():
+                if i >= header_row:
+                    break
+                for val in row.values:
+                    val_str = str(val)
+                    if 'CNPJ' in val_str.upper():
+                        match = re.search(r'\d{2}[\.\-]?\d{3}[\.\-]?\d{3}[\/]?\d{4}[\-]?\d{2}', val_str)
+                        if match:
+                            cnpj_planilha = ''.join(filter(str.isdigit, match.group()))
+                            break
+                if cnpj_planilha:
+                    break
+
+            if cnpj_planilha:
+                cnpj_empresa = ''.join(filter(str.isdigit, empresa.cnpj))
+                if cnpj_planilha != cnpj_empresa:
+                    return Response({
+                        'detail': f'A planilha pertence ao CNPJ {cnpj_planilha}, mas a empresa selecionada possui o CNPJ {cnpj_empresa}. Importe a planilha correta.'
+                    }, status=400)
+
+            df = pd.read_excel(BytesIO(conteudo), engine='xlrd', header=header_row)
+
+            # Normaliza nomes das colunas
+            df.columns = [str(c).strip().upper() for c in df.columns]
+
+            # Mapeia para nomes padronizados
+            col_map = {}
+            for col in df.columns:
+                if 'NUMERO' in col and 'NOTA' in col:
+                    col_map[col] = 'numero'
+                elif col.startswith('SÉR') or col.startswith('SER'):
+                    col_map[col] = 'serie'
+                elif 'SITUA' in col:
+                    col_map[col] = 'situacao'
+                elif 'CHAVE' in col:
+                    col_map[col] = 'chave_acesso'
+                elif 'DATA' in col and 'EMISS' in col:
+                    col_map[col] = 'data_emissao'
+                elif ('VALR' in col or 'VALOR' in col) and 'NOTA' in col:
+                    col_map[col] = 'valor_total'
+
             df = df.rename(columns=col_map)
-            df = df[list(col_map.values())].dropna(subset=['numero', 'serie'])
+            colunas_necessarias = ['numero', 'serie', 'situacao']
+            faltando_cols = [c for c in colunas_necessarias if c not in df.columns]
+            if faltando_cols:
+                return Response({'detail': f'Colunas não encontradas na planilha: {faltando_cols}. Verifique o formato.'}, status=400)
+
+            cols_disponiveis = [v for v in col_map.values() if v in df.columns]
+            df = df[cols_disponiveis].dropna(subset=['numero', 'serie'])
+            df['numero'] = pd.to_numeric(df['numero'], errors='coerce')
+            df = df.dropna(subset=['numero'])
             df['numero'] = df['numero'].astype(int)
-            df['serie'] = df['serie'].astype(int).astype(str)
+            df['serie'] = pd.to_numeric(df['serie'], errors='coerce').fillna(1).astype(int).astype(str)
             df['situacao'] = df['situacao'].astype(str).str.strip()
+
+        except Response:
+            raise
         except Exception as e:
             return Response({'detail': f'Erro ao ler planilha: {str(e)}'}, status=400)
 
-        # Notas do sistema para essa empresa
-        docs_sistema = Documento.objects.filter(empresa=empresa).values(
+        # Detecta o período coberto pela planilha da SEFAZ
+        data_min = None
+        data_max = None
+        if 'data_emissao' in df.columns:
+            datas = pd.to_datetime(df['data_emissao'], dayfirst=True, errors='coerce').dropna()
+            if not datas.empty:
+                data_min = datas.min().date()
+                data_max = datas.max().date()
+
+        # Notas do sistema para essa empresa, filtradas pelo período da planilha
+        docs_qs = Documento.objects.filter(empresa=empresa)
+        if data_min and data_max:
+            docs_qs = docs_qs.filter(data_emissao__gte=data_min, data_emissao__lte=data_max)
+
+        docs_sistema = docs_qs.values(
             'numero_nota', 'serie', 'chave_acesso', 'status', 'data_emissao', 'valor_total'
         )
         sistema_map = {
@@ -439,7 +494,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                     'valor_total': str(doc['valor_total']),
                 })
 
-        # Gaps na sequência por série
+        # Saltos na sequência por série
         gaps = []
         series_sefaz = {}
         for (serie, numero) in sefaz_notas:
@@ -461,7 +516,58 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         return Response({
             'empresa': empresa.nome_fantasia,
             'total_sefaz': len(df),
+            'periodo': {
+                'inicio': str(data_min) if data_min else None,
+                'fim': str(data_max) if data_max else None,
+            },
             'faltando_no_sistema': faltando_no_sistema,
             'extras_no_sistema': extras_no_sistema,
             'gaps_sequencia': gaps,
         })
+    
+    @action(detail=False, methods=['post'], url_path='enviar-xmls')
+    def enviar_xmls(self, request):
+        empresa_id = request.query_params.get('empresa')
+        if not empresa_id:
+            return Response({'detail': 'Parâmetro empresa é obrigatório.'}, status=400)
+
+        try:
+            empresa = Empresa.objects.get(id=empresa_id)
+        except Empresa.DoesNotExist:
+            return Response({'detail': 'Empresa não encontrada.'}, status=404)
+
+        if not empresa.email_contabilidade:
+            return Response({'detail': 'Empresa não possui email de contabilidade cadastrado.'}, status=400)
+
+        data_inicio = request.query_params.get('data_emissao__gte')
+        data_fim = request.query_params.get('data_emissao__lte')
+
+        from apps.documentos.tasks import enviar_xmls_empresa
+        enviar_xmls_empresa.delay(empresa_id, data_inicio=data_inicio, data_fim=data_fim)
+
+        return Response({'detail': 'Envio iniciado com sucesso.'})
+    
+    @action(detail=False, methods=['get'], url_path='download-xmls')
+    def download_xmls(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        zip_buffer = io.BytesIO()
+        arquivos_incluidos = 0
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for doc in queryset:
+                caminho_completo = os.path.join('media', doc.caminho_arquivo)
+                if os.path.exists(caminho_completo):
+                    zf.write(caminho_completo, arcname=os.path.basename(caminho_completo))
+                    arquivos_incluidos += 1
+
+        if arquivos_incluidos == 0:
+            return Response({'detail': 'Nenhum arquivo encontrado.'}, status=404)
+
+        zip_buffer.seek(0)
+
+        return HttpResponse(
+            zip_buffer,
+            content_type='application/zip',
+            headers={'Content-Disposition': 'attachment; filename="xmls.zip"'}
+    )

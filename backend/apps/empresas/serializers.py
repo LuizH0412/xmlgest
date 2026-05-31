@@ -9,7 +9,7 @@ class EmpresaSerializer(serializers.ModelSerializer):
     atualizado_por = UsuarioResumoSerializer(read_only=True)
     class Meta:
         model = Empresa
-        fields = ['id', 'cnpj', 'razao_social', 'nome_fantasia', 'inscricao_estadual', 'codigo_interno',
+        fields = ['id', 'cnpj', 'razao_social', 'nome_fantasia', 'inscricao_estadual', 'email_contabilidade', 'codigo_interno',
         'desativado', 'desativado_em', 'criado_em', 'atualizado_em', 'cadastrado_por', 'atualizado_por']
 
     def validate_cnpj(self, value):

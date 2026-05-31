@@ -11,18 +11,31 @@ class XMLHandler(FileSystemEventHandler):
     def on_created(self, event):
         if event.is_directory:
             return
-
         if not event.src_path.endswith('.xml'):
             return
-        
-        time.sleep(1)
-        
-        sucesso = self.api_client.upload_xml(event.src_path)
 
+        if not self._aguardar_arquivo(event.src_path):
+            print(f"Arquivo não ficou disponível: {event.src_path}")
+            return
+
+        sucesso = self.api_client.upload_xml(event.src_path)
         if sucesso:
             print(f"Upload realizado: {event.src_path}")
         else:
             print(f"Falha no upload: {event.src_path}")
+
+    def _aguardar_arquivo(self, caminho, tentativas=10, intervalo=0.5):
+        tamanho_anterior = -1
+        for _ in range(tentativas):
+            try:
+                tamanho_atual = os.path.getsize(caminho)
+                if tamanho_atual > 0 and tamanho_atual == tamanho_anterior:
+                    return True
+                tamanho_anterior = tamanho_atual
+            except (FileNotFoundError, OSError):
+                pass
+            time.sleep(intervalo)
+        return False
 
 
 class FolderWatcher:

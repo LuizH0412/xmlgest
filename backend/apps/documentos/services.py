@@ -1,66 +1,122 @@
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
+
 def detectar_tipo(root, ns):
     mod = root.find('.//nfe:ide/nfe:mod', ns)
+
     if mod is not None:
         if mod.text == '55':
             return 'NFe'
         elif mod.text == '65':
             return 'NFCe'
-    # verificar CTe e MDFe depois
+
     return None
+
 
 def extrair_dados(arquivo):
     try:
         tree = ET.parse(arquivo)
         root = tree.getroot()
+
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         inf_nfe = root.find('.//nfe:infNFe', ns)
+
         if inf_nfe is None:
             raise ValueError('XML não é uma NFe válida')
 
         chave = inf_nfe.attrib['Id'].replace('NFe', '')
-        cnpj_emitente = root.find('.//nfe:emit/nfe:CNPJ', ns).text
+
+        # CNPJ ou CPF do emitente
+        emit = root.find('.//nfe:emit', ns)
+
+        cnpj_emitente = None
+
+        if emit is not None:
+            cnpj = emit.find('nfe:CNPJ', ns)
+            cpf = emit.find('nfe:CPF', ns)
+
+            if cnpj is not None:
+                cnpj_emitente = cnpj.text
+            elif cpf is not None:
+                cnpj_emitente = cpf.text
+
         numero_nota = root.find('.//nfe:ide/nfe:nNF', ns).text
         serie = root.find('.//nfe:ide/nfe:serie', ns).text
-        data_emissao_raw = root.find('.//nfe:ide/nfe:dhEmi', ns).text
-        data_emissao = datetime.fromisoformat(data_emissao_raw).date()
-        valor_total = root.find('.//nfe:total/nfe:ICMSTot/nfe:vNF', ns).text
 
-        # Extrai itens
+        data_emissao_raw = root.find(
+            './/nfe:ide/nfe:dhEmi',
+            ns
+        ).text
+
+        data_emissao = datetime.fromisoformat(
+            data_emissao_raw
+        ).date()
+
+        valor_total = root.find(
+            './/nfe:total/nfe:ICMSTot/nfe:vNF',
+            ns
+        ).text
+
         itens = []
+
         for det in root.findall('.//nfe:det', ns):
             prod = det.find('nfe:prod', ns)
             imposto = det.find('nfe:imposto', ns)
 
-            # CST ICMS — pode estar em ICMS00, ICMS40, etc.
             cst_icms = None
-            icms_grupo = imposto.find('.//nfe:ICMS', ns) if imposto is not None else None
+
+            icms_grupo = (
+                imposto.find('.//nfe:ICMS', ns)
+                if imposto is not None
+                else None
+            )
+
             if icms_grupo is not None:
-                cst_tag = icms_grupo.find('./*/nfe:CST', ns) or icms_grupo.find('./*/nfe:CSOSN', ns)
+                cst_tag = (
+                    icms_grupo.find('./*/nfe:CST', ns)
+                    or icms_grupo.find('./*/nfe:CSOSN', ns)
+                )
+
                 if cst_tag is not None:
                     cst_icms = cst_tag.text
 
-            # CST PIS
             cst_pis = None
-            pis = imposto.find('.//nfe:PIS', ns) if imposto is not None else None
+
+            pis = (
+                imposto.find('.//nfe:PIS', ns)
+                if imposto is not None
+                else None
+            )
+
             if pis is not None:
                 cst_pis_tag = pis.find('./*/nfe:CST', ns)
+
                 if cst_pis_tag is not None:
                     cst_pis = cst_pis_tag.text
 
-            # CST COFINS
             cst_cofins = None
-            cofins = imposto.find('.//nfe:COFINS', ns) if imposto is not None else None
+
+            cofins = (
+                imposto.find('.//nfe:COFINS', ns)
+                if imposto is not None
+                else None
+            )
+
             if cofins is not None:
                 cst_cofins_tag = cofins.find('./*/nfe:CST', ns)
+
                 if cst_cofins_tag is not None:
                     cst_cofins = cst_cofins_tag.text
 
             def txt(tag):
-                el = prod.find(f'nfe:{tag}', ns) if prod is not None else None
+                el = (
+                    prod.find(f'nfe:{tag}', ns)
+                    if prod is not None
+                    else None
+                )
+
                 return el.text if el is not None else None
 
             itens.append({
@@ -88,5 +144,6 @@ def extrair_dados(arquivo):
             'status': 'autorizado',
             'itens': itens,
         }
+
     except ET.ParseError:
         raise ValueError('Arquivo XML inválido')
