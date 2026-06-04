@@ -69,8 +69,10 @@ class FolderWatcher:
                     if arquivo.endswith('.xml'):
                         caminho = os.path.join(raiz, arquivo)
                         sucesso = self.api_client.upload_xml(caminho)
-                        if sucesso:
+                        if sucesso is True:
                             print(f"Sincronizado: {caminho}")
+                        elif sucesso is None:
+                            print(f"Já existe: {caminho}")  
                         else:
-                            print(f"Já existe ou falhou: {caminho}")
+                            print(f"Falhou: {caminho}") 
         print("Sincronização concluída.")

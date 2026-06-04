@@ -23,10 +23,9 @@ class ApiClient:
         except requests.exceptions.ConnectionError:
             return False
 
-    def upload_xml(self, caminho_arquivo):
+    def upload_xml(self, caminho_arquivo, _retry=True):  # ← flag de retry
         try:
             token = self.config_manager.recuperar_token()
-            
             with open(caminho_arquivo, 'rb') as f:
                 headers = {'Authorization': f'Bearer {token}'}
                 response = requests.post(
@@ -35,12 +34,16 @@ class ApiClient:
                     files={'arquivo': f}
                 )
 
+            print(f"Status: {response.status_code} | {caminho_arquivo}")  # ← adicione isso
+
             if response.status_code == 201:
                 return True
-            elif response.status_code == 401:
-                self.autenticar()
-                token = self.config_manager.recuperar_token()  # ← pega o token novo
-                return self.upload_xml(caminho_arquivo)
+            elif response.status_code == 409:
+                print(f"Duplicata ignorada: {caminho_arquivo}")
+                return None  # ← None = já existe (não é falha)
+            elif response.status_code == 401 and _retry:
+                if self.autenticar():
+                    return self.upload_xml(caminho_arquivo, _retry=False)
             return False
         except requests.exceptions.ConnectionError:
             return False

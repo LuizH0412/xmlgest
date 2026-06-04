@@ -1,16 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
-
-const hoje = new Date()
-const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0]
-const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0]
+import DateRangePicker from '../components/DateRangePicker'
 
 // ─── Button Primitives ────────────────────────────────────────────────────────
 
-/** Solid action button — primary CTA */
 function BtnPrimary({ children, onClick, disabled, className = '' }) {
   return (
     <button
@@ -23,7 +19,6 @@ function BtnPrimary({ children, onClick, disabled, className = '' }) {
   )
 }
 
-/** Ghost button — muted default */
 function BtnGhost({ children, onClick, disabled, className = '' }) {
   return (
     <button
@@ -36,7 +31,6 @@ function BtnGhost({ children, onClick, disabled, className = '' }) {
   )
 }
 
-/** Colored ghost button for semantic meaning */
 function BtnAccent({ children, onClick, disabled, color = 'yellow', className = '' }) {
   const colors = {
     yellow: 'border-yellow-500/40 text-yellow-400 hover:bg-yellow-400/10 hover:border-yellow-400',
@@ -57,7 +51,6 @@ function BtnAccent({ children, onClick, disabled, color = 'yellow', className = 
   )
 }
 
-/** Danger/confirm inline pair */
 function BtnDanger({ children, onClick, disabled, className = '' }) {
   return (
     <button
@@ -70,7 +63,6 @@ function BtnDanger({ children, onClick, disabled, className = '' }) {
   )
 }
 
-/** Small icon-only button */
 function BtnIcon({ children, onClick, title, className = '' }) {
   return (
     <button
@@ -83,7 +75,7 @@ function BtnIcon({ children, onClick, title, className = '' }) {
   )
 }
 
-// ─── Reusable: Status badge ───────────────────────────────────────────────────
+// ─── Badge ────────────────────────────────────────────────────────────────────
 
 function Badge({ children, color = 'gray' }) {
   const colors = {
@@ -93,6 +85,7 @@ function Badge({ children, color = 'gray' }) {
     orange: 'bg-orange-400/10 text-orange-400',
     gray:   'bg-gray-700 text-gray-300',
     blue:   'bg-blue-400/10 text-blue-400',
+    purple: 'bg-purple-400/10 text-purple-400',
   }
   return (
     <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${colors[color]}`}>
@@ -100,6 +93,51 @@ function Badge({ children, color = 'gray' }) {
     </span>
   )
 }
+
+// ─── Hook de paginação reutilizável ──────────────────────────────────────────
+
+function usePagination(items, perPage = 20) {
+  const [pagina, setPagina] = useState(1)
+  const totalPaginas = Math.ceil((items?.length || 0) / perPage)
+  const paginados = (items || []).slice((pagina - 1) * perPage, pagina * perPage)
+  useEffect(() => { setPagina(1) }, [items])
+  return { paginados, pagina, setPagina, totalPaginas }
+}
+
+// ─── Controles de paginação para tabelas de inconsistências ──────────────────
+
+function PaginacaoTabela({ pagina, totalPaginas, setPagina, label }) {
+  if (totalPaginas <= 1) return null
+  return (
+    <div className="flex items-center justify-between px-6 py-3 border-t border-gray-800">
+      <span className="text-gray-600 text-xs">
+        {label} · página <span className="text-gray-400">{pagina}</span> de {totalPaginas}
+      </span>
+      <div className="flex gap-1.5">
+        <button
+          onClick={() => setPagina(p => Math.max(1, p - 1))}
+          disabled={pagina === 1}
+          className="px-2.5 py-1 rounded-md border border-gray-700 text-gray-400 text-xs hover:bg-gray-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+        >
+          ← Anterior
+        </button>
+        <button
+          onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+          disabled={pagina === totalPaginas}
+          className="px-2.5 py-1 rounded-md border border-gray-700 text-gray-400 text-xs hover:bg-gray-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+        >
+          Próxima →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Helpers para datas ───────────────────────────────────────────────────────
+
+const hoje = new Date()
+const primeiroDiaMesStr = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0]
+const ultimoDiaMesStr   = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0]
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -122,8 +160,8 @@ function EmpresaDetalhe() {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroSerie, setFiltroSerie] = useState('')
   const [filtroNumero, setFiltroNumero] = useState('')
-  const [filtroDataInicio, setFiltroDataInicio] = useState(primeiroDiaMes)
-  const [filtroDataFim, setFiltroDataFim] = useState(ultimoDiaMes)
+  const [filtroDataInicio, setFiltroDataInicio] = useState(primeiroDiaMesStr)
+  const [filtroDataFim, setFiltroDataFim] = useState(ultimoDiaMesStr)
   const [pagina, setPagina] = useState(1)
   const [total, setTotal] = useState(0)
 
@@ -200,8 +238,8 @@ function EmpresaDetalhe() {
     setFiltroTipo('')
     setFiltroSerie('')
     setFiltroNumero('')
-    setFiltroDataInicio(primeiroDiaMes)
-    setFiltroDataFim(ultimoDiaMes)
+    setFiltroDataInicio(primeiroDiaMesStr)
+    setFiltroDataFim(ultimoDiaMesStr)
     setPagina(1)
   }
 
@@ -425,18 +463,18 @@ function EmpresaDetalhe() {
     setEnviandoXmls(true)
     setMsgEnvioXmls(null)
     try {
-        await api.post(`/documentos/enviar-xmls/?${buildFiltrosQuery()}`)
-        setMsgEnvioXmls({ tipo: 'sucesso', texto: 'XMLs enviados para o email da contabilidade.' })
+      await api.post(`/documentos/enviar-xmls/?${buildFiltrosQuery()}`)
+      setMsgEnvioXmls({ tipo: 'sucesso', texto: 'XMLs enviados para o email da contabilidade.' })
     } catch (err) {
-        const detalhe = err.response?.data?.detail || 'Erro ao enviar XMLs.'
-        setMsgEnvioXmls({ tipo: 'erro', texto: detalhe })
+      const detalhe = err.response?.data?.detail || 'Erro ao enviar XMLs.'
+      setMsgEnvioXmls({ tipo: 'erro', texto: detalhe })
     } finally {
-        setEnviandoXmls(false)
-      }
-  } 
+      setEnviandoXmls(false)
+    }
+  }
 
   const temFiltrosAtivos = filtroTipo || filtroSerie || filtroNumero ||
-    filtroDataInicio !== primeiroDiaMes || filtroDataFim !== ultimoDiaMes
+    filtroDataInicio !== primeiroDiaMesStr || filtroDataFim !== ultimoDiaMesStr
   const totalPaginas = Math.ceil(total / 20)
 
   if (loading) return (
@@ -449,7 +487,6 @@ function EmpresaDetalhe() {
   const abas = ['documentos', 'informacoes', 'inconsistencias', ...(empresa.desativado ? [] : ['credenciais'])]
   const abaLabels = { documentos: 'Documentos', informacoes: 'Informações', inconsistencias: 'Inconsistências', credenciais: 'Credenciais' }
 
-  // ─── Input class helper ────────────────────────────────────────────────────
   const inputCls = (erro) =>
     `w-full bg-gray-800/60 text-white rounded-lg px-3 py-2 border text-sm transition focus:outline-none ${
       erro ? 'border-red-500/60 focus:border-red-400' : 'border-gray-700 focus:border-yellow-400/70'
@@ -468,7 +505,6 @@ function EmpresaDetalhe() {
           >
             ← Voltar
           </button>
-
           <div className="flex-1">
             <h1 className="text-white text-2xl font-bold tracking-tight">{empresa.nome_fantasia}</h1>
             <p className="text-gray-500 text-sm mt-0.5">
@@ -477,12 +513,10 @@ function EmpresaDetalhe() {
               CNPJ: <span className="text-gray-400">{empresa.cnpj}</span>
             </p>
           </div>
-
           <div className="flex items-center gap-3 mt-1">
             <Badge color={empresa.desativado ? 'red' : 'green'}>
               {empresa.desativado ? 'Inativa' : 'Ativa'}
             </Badge>
-
             {podeDesativar && (
               !confirmarDesativar ? (
                 empresa.desativado
@@ -531,11 +565,8 @@ function EmpresaDetalhe() {
         ══════════════════════════════════════════ */}
         {abaAtiva === 'documentos' && (
           <div>
-            {/* Filter bar */}
             <div className="bg-gray-900/60 rounded-xl border border-gray-800 px-5 py-4 mb-4">
               <div className="flex flex-wrap gap-3 items-end">
-
-                {/* Tipo */}
                 <div>
                   <label className="text-gray-500 text-xs mb-1.5 block">Tipo</label>
                   <select
@@ -550,8 +581,6 @@ function EmpresaDetalhe() {
                     <option value="MDFe">MDFe</option>
                   </select>
                 </div>
-
-                {/* Série */}
                 <div>
                   <label className="text-gray-500 text-xs mb-1.5 block">Série</label>
                   <input
@@ -562,8 +591,6 @@ function EmpresaDetalhe() {
                     className="w-20 bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
                   />
                 </div>
-
-                {/* Número */}
                 <div>
                   <label className="text-gray-500 text-xs mb-1.5 block">Número</label>
                   <input
@@ -574,28 +601,20 @@ function EmpresaDetalhe() {
                     className="w-28 bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
                   />
                 </div>
-
-                {/* Período */}
                 <div>
                   <label className="text-gray-500 text-xs mb-1.5 block">Período</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      value={filtroDataInicio}
-                      onChange={(e) => { setFiltroDataInicio(e.target.value); setPagina(1) }}
-                      className="bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
-                    />
-                    <span className="text-gray-600 text-sm">→</span>
-                    <input
-                      type="date"
-                      value={filtroDataFim}
-                      min={filtroDataInicio || undefined}
-                      onChange={(e) => { setFiltroDataFim(e.target.value); setPagina(1) }}
-                      className="bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
-                    />
-                  </div>
+                  <DateRangePicker
+                    value={{
+                      start: filtroDataInicio ? new Date(filtroDataInicio + 'T00:00:00') : null,
+                      end:   filtroDataFim    ? new Date(filtroDataFim    + 'T00:00:00') : null,
+                    }}
+                    onChange={({ start, end }) => {
+                      setFiltroDataInicio(start.toISOString().split('T')[0])
+                      setFiltroDataFim(end.toISOString().split('T')[0])
+                      setPagina(1)
+                    }}
+                  />
                 </div>
-
                 {temFiltrosAtivos && (
                   <button
                     onClick={limparFiltros}
@@ -604,57 +623,31 @@ function EmpresaDetalhe() {
                     ✕ Limpar filtros
                   </button>
                 )}
-
-                {/* Right-side actions */}
                 <div className="ml-auto flex items-center gap-2 self-end">
                   <span className="text-gray-500 text-xs mr-1">
                     {total} doc{total !== 1 ? 's' : ''}
                   </span>
-
                   {total > 0 && (
                     <div className="flex items-center gap-1.5">
-                      {/* Enviar XMLs — distinct purple */}
                       {empresa.email_contabilidade && (
-                        <BtnAccent
-                          color="purple"
-                          onClick={enviarXmlsManual}
-                          disabled={enviandoXmls}
-                        >
+                        <BtnAccent color="purple" onClick={enviarXmlsManual} disabled={enviandoXmls}>
                           {enviandoXmls ? 'Enviando…' : '✉ Enviar XMLs'}
                         </BtnAccent>
                       )}
-
-                      {/* Separator */}
                       <div className="w-px h-5 bg-gray-700 mx-0.5" />
-
-                      {/* Downloads group */}
-                      <BtnAccent
-                        color="green"
-                        onClick={() => downloadRelatorio('excel')}
-                        disabled={!!gerandoRelatorio}
-                      >
+                      <BtnAccent color="green" onClick={() => downloadRelatorio('excel')} disabled={!!gerandoRelatorio}>
                         {gerandoRelatorio === 'excel' ? '…' : '↓ Excel'}
                       </BtnAccent>
-
-                      <BtnAccent
-                        color="red"
-                        onClick={() => downloadRelatorio('pdf')}
-                        disabled={!!gerandoRelatorio}
-                      >
+                      <BtnAccent color="red" onClick={() => downloadRelatorio('pdf')} disabled={!!gerandoRelatorio}>
                         {gerandoRelatorio === 'pdf' ? '…' : '↓ PDF'}
                       </BtnAccent>
-
-                      <BtnAccent
-                        color="yellow"
-                        onClick={downloadXmlsZip}
-                      >
+                      <BtnAccent color="yellow" onClick={downloadXmlsZip}>
                         ↓ XMLs
                       </BtnAccent>
                     </div>
                   )}
                 </div>
               </div>
-
               {msgEnvioXmls && (
                 <p className={`text-xs mt-3 ${msgEnvioXmls.tipo === 'sucesso' ? 'text-green-400' : 'text-red-400'}`}>
                   {msgEnvioXmls.tipo === 'sucesso' ? '✓' : '✕'} {msgEnvioXmls.texto}
@@ -662,7 +655,6 @@ function EmpresaDetalhe() {
               )}
             </div>
 
-            {/* Table */}
             <div className="bg-gray-900/60 rounded-xl border border-gray-800 overflow-hidden">
               <table className="w-full">
                 <thead>
@@ -679,21 +671,15 @@ function EmpresaDetalhe() {
                 </thead>
                 <tbody>
                   {loadingDocs ? (
-                    <tr>
-                      <td colSpan={7} className="text-center text-gray-500 py-10 text-sm animate-pulse">Carregando…</td>
-                    </tr>
+                    <tr><td colSpan={7} className="text-center text-gray-500 py-10 text-sm animate-pulse">Carregando…</td></tr>
                   ) : documentos.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="text-center text-gray-500 py-10 text-sm">Nenhum documento encontrado</td>
-                    </tr>
+                    <tr><td colSpan={7} className="text-center text-gray-500 py-10 text-sm">Nenhum documento encontrado</td></tr>
                   ) : (
                     documentos.map((doc) => (
                       <tr key={doc.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 transition">
                         <td className="px-6 py-3.5 text-white font-mono text-sm">{doc.numero_nota}</td>
                         <td className="px-6 py-3.5 text-gray-500 text-sm">{doc.serie}</td>
-                        <td className="px-6 py-3.5">
-                          <Badge color="yellow">{doc.tipo}</Badge>
-                        </td>
+                        <td className="px-6 py-3.5"><Badge color="yellow">{doc.tipo}</Badge></td>
                         <td className="px-6 py-3.5 text-gray-400 text-sm">
                           {new Date(doc.data_emissao + 'T00:00:00').toLocaleDateString('pt-BR')}
                         </td>
@@ -704,7 +690,6 @@ function EmpresaDetalhe() {
                           <Badge color={doc.status === 'autorizado' ? 'green' : 'red'}>{doc.status}</Badge>
                         </td>
                         <td className="px-6 py-3.5">
-                          {/* Row-level actions: compact ghost pair */}
                           <div className="flex gap-1.5 justify-end">
                             <BtnGhost onClick={() => downloadXml(doc.chave_acesso)}>XML</BtnGhost>
                             <BtnGhost onClick={() => downloadPdf(doc.chave_acesso)}>PDF</BtnGhost>
@@ -717,19 +702,14 @@ function EmpresaDetalhe() {
               </table>
             </div>
 
-            {/* Pagination */}
             {totalPaginas > 1 && (
               <div className="flex items-center justify-between mt-4">
                 <p className="text-gray-500 text-sm">
                   Página <span className="text-gray-300">{pagina}</span> de {totalPaginas}
                 </p>
                 <div className="flex gap-2">
-                  <BtnGhost onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={pagina === 1}>
-                    ← Anterior
-                  </BtnGhost>
-                  <BtnGhost onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={pagina === totalPaginas}>
-                    Próxima →
-                  </BtnGhost>
+                  <BtnGhost onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={pagina === 1}>← Anterior</BtnGhost>
+                  <BtnGhost onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={pagina === totalPaginas}>Próxima →</BtnGhost>
                 </div>
               </div>
             )}
@@ -743,11 +723,8 @@ function EmpresaDetalhe() {
           <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6">
             <div className="flex items-center justify-between mb-5">
               <p className="text-white text-sm font-semibold">Dados da Empresa</p>
-              {!empresa.desativado && (
-                <BtnPrimary onClick={abrirModalEditar}>✏ Editar</BtnPrimary>
-              )}
+              {!empresa.desativado && <BtnPrimary onClick={abrirModalEditar}>✏ Editar</BtnPrimary>}
             </div>
-
             <div className="space-y-0">
               {[
                 { label: 'Razão Social', value: empresa.razao_social },
@@ -771,168 +748,16 @@ function EmpresaDetalhe() {
             Aba: Inconsistências
         ══════════════════════════════════════════ */}
         {abaAtiva === 'inconsistencias' && (
-          <div className="space-y-5">
-            <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6">
-              <p className="text-white text-sm font-semibold mb-1">Analisar planilha da SEFAZ</p>
-              <p className="text-gray-500 text-xs mb-4">
-                Importe o arquivo .xls exportado do portal da SEFAZ para verificar inconsistências com os documentos do sistema.
-              </p>
-              <div className="flex items-center gap-3">
-                <input
-                  type="file"
-                  accept=".xls,.xlsx"
-                  onChange={(e) => { setArquivoSefaz(e.target.files[0]); setResultadoInconsistencias(null); setErroInconsistencia('') }}
-                  className="flex-1 bg-gray-800/60 text-gray-400 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-yellow-400/10 file:text-yellow-400 file:text-xs cursor-pointer transition"
-                />
-                <BtnPrimary onClick={analisarInconsistencias} disabled={analisando || !arquivoSefaz}>
-                  {analisando ? 'Analisando…' : 'Analisar'}
-                </BtnPrimary>
-              </div>
-              {erroInconsistencia && (
-                <p className="text-red-400 text-xs mt-3">✕ {erroInconsistencia}</p>
-              )}
-            </div>
-
-            {resultadoInconsistencias && (
-              <div className="space-y-4">
-                {/* Summary cards */}
-                <div className="grid grid-cols-4 gap-3">
-                  {[
-                    { label: 'Notas na SEFAZ', value: resultadoInconsistencias.total_sefaz, color: 'default' },
-                    { label: 'Faltando no sistema', value: resultadoInconsistencias.faltando_no_sistema.length, color: resultadoInconsistencias.faltando_no_sistema.length > 0 ? 'red' : 'green' },
-                    { label: 'Gaps na sequência', value: resultadoInconsistencias.gaps_sequencia.length, color: resultadoInconsistencias.gaps_sequencia.length > 0 ? 'orange' : 'green' },
-                  ].map((card) => (
-                    <div key={card.label} className={`rounded-xl border p-4 text-center ${
-                      card.color === 'red' ? 'bg-red-400/5 border-red-400/20' :
-                      card.color === 'orange' ? 'bg-orange-400/5 border-orange-400/20' :
-                      'bg-gray-900/60 border-gray-800'
-                    }`}>
-                      <p className="text-gray-500 text-xs mb-1">{card.label}</p>
-                      <p className={`text-2xl font-bold ${
-                        card.color === 'red' ? 'text-red-400' :
-                        card.color === 'orange' ? 'text-orange-400' :
-                        card.color === 'green' ? 'text-green-400' :
-                        'text-white'
-                      }`}>{card.value}</p>
-                    </div>
-                  ))}
-                  <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 text-center">
-                    <p className="text-gray-500 text-xs mb-1">Valor total (SEFAZ)</p>
-                    <p className="text-white text-lg font-bold">
-                      {(() => {
-                        const todos = [...resultadoInconsistencias.faltando_no_sistema, ...resultadoInconsistencias.extras_no_sistema]
-                        const total = todos.reduce((acc, item) => {
-                          const v = parseFloat(String(item.valor_total).replace(',', '.'))
-                          return acc + (isNaN(v) ? 0 : v)
-                        }, 0)
-                        return `R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                      })()}
-                    </p>
-                  </div>
-                </div>
-
-                {resultadoInconsistencias.faltando_no_sistema.length === 0 &&
-                 resultadoInconsistencias.extras_no_sistema.length === 0 &&
-                 resultadoInconsistencias.gaps_sequencia.length === 0 && (
-                  <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-5 flex items-center gap-3">
-                    <span className="text-xl">✓</span>
-                    <p className="text-green-400 text-sm font-medium">Nenhuma inconsistência encontrada! Todos os documentos estão em conformidade.</p>
-                  </div>
-                )}
-
-                {/* Faltando no sistema */}
-                {resultadoInconsistencias.faltando_no_sistema.length > 0 && (
-                  <div className="bg-gray-900/60 rounded-xl border border-red-400/20 overflow-hidden">
-                    <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
-                      <span className="text-red-400 text-sm font-medium">Notas na SEFAZ ausentes no sistema</span>
-                      <Badge color="red">{resultadoInconsistencias.faltando_no_sistema.length}</Badge>
-                    </div>
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-800">
-                          {['Número', 'Série', 'Situação SEFAZ', 'Data Emissão', 'Valor Total'].map(h => (
-                            <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {resultadoInconsistencias.faltando_no_sistema.map((item, i) => (
-                          <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
-                            <td className="px-6 py-3 text-white font-mono text-sm">{item.numero}</td>
-                            <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
-                            <td className="px-6 py-3">
-                              <Badge color={item.situacao === 'Autorizada' ? 'green' : 'red'}>{item.situacao}</Badge>
-                            </td>
-                            <td className="px-6 py-3 text-gray-400 text-sm">{item.data_emissao}</td>
-                            <td className="px-6 py-3 text-white text-sm">R$ {item.valor_total}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Extras no sistema */}
-                {resultadoInconsistencias.extras_no_sistema.length > 0 && (
-                  <div className="bg-gray-900/60 rounded-xl border border-yellow-400/20 overflow-hidden">
-                    <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
-                      <span className="text-yellow-400 text-sm font-medium">Notas no sistema ausentes na SEFAZ</span>
-                      <Badge color="yellow">{resultadoInconsistencias.extras_no_sistema.length}</Badge>
-                    </div>
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-800">
-                          {['Número', 'Série', 'Status Sistema', 'Chave de Acesso'].map(h => (
-                            <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {resultadoInconsistencias.extras_no_sistema.map((item, i) => (
-                          <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
-                            <td className="px-6 py-3 text-white font-mono text-sm">{item.numero}</td>
-                            <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
-                            <td className="px-6 py-3">
-                              <Badge color={item.status === 'autorizado' ? 'green' : 'red'}>{item.status}</Badge>
-                            </td>
-                            <td className="px-6 py-3 text-gray-500 text-xs font-mono">{item.chave_acesso}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Gaps */}
-                {resultadoInconsistencias.gaps_sequencia.length > 0 && (
-                  <div className="bg-gray-900/60 rounded-xl border border-orange-400/20 overflow-hidden">
-                    <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
-                      <span className="text-orange-400 text-sm font-medium">Gaps na sequência numérica da SEFAZ</span>
-                      <Badge color="orange">{resultadoInconsistencias.gaps_sequencia.length}</Badge>
-                    </div>
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-800">
-                          {['Série', 'Número faltante', 'Entre as notas'].map(h => (
-                            <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {resultadoInconsistencias.gaps_sequencia.map((item, i) => (
-                          <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
-                            <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
-                            <td className="px-6 py-3 text-orange-400 font-mono font-medium text-sm">{item.numero}</td>
-                            <td className="px-6 py-3 text-gray-500 text-sm">{item.entre}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <InconsistenciasAba
+            arquivoSefaz={arquivoSefaz}
+            setArquivoSefaz={setArquivoSefaz}
+            analisando={analisando}
+            analisarInconsistencias={analisarInconsistencias}
+            erroInconsistencia={erroInconsistencia}
+            setErroInconsistencia={setErroInconsistencia}
+            resultadoInconsistencias={resultadoInconsistencias}
+            setResultadoInconsistencias={setResultadoInconsistencias}
+          />
         )}
 
         {/* ══════════════════════════════════════════
@@ -941,54 +766,39 @@ function EmpresaDetalhe() {
         {abaAtiva === 'credenciais' && (
           <div className="space-y-6">
             <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6 space-y-5">
-              {/* Client ID */}
               <div>
                 <p className="text-gray-500 text-xs mb-2">Client ID</p>
                 <div className="flex items-center gap-3 bg-gray-800/60 rounded-lg px-4 py-3 border border-gray-700">
                   <code className="text-yellow-400 text-sm flex-1 break-all">{empresa.client_id}</code>
-                  <button
-                    onClick={() => copiar(empresa.client_id, 'client_id')}
-                    className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap"
-                  >
+                  <button onClick={() => copiar(empresa.client_id, 'client_id')} className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap">
                     {copiado === 'client_id' ? '✓ Copiado' : 'Copiar'}
                   </button>
                 </div>
               </div>
-
-              {/* Client Secret */}
               <div>
                 <p className="text-gray-500 text-xs mb-2">Client Secret</p>
                 <div className="flex items-center gap-3 bg-gray-800/60 rounded-lg px-4 py-3 border border-gray-700">
                   <code className="text-yellow-400 text-sm flex-1 break-all">
                     {mostrarSecret ? empresa.client_secret : '••••••••••••••••••••••••••••••••'}
                   </code>
-                  <button
-                    onClick={() => setMostrarSecret(!mostrarSecret)}
-                    className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap"
-                  >
+                  <button onClick={() => setMostrarSecret(!mostrarSecret)} className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap">
                     {mostrarSecret ? 'Ocultar' : 'Revelar'}
                   </button>
                   {mostrarSecret && (
-                    <button
-                      onClick={() => copiar(empresa.client_secret, 'client_secret')}
-                      className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap"
-                    >
+                    <button onClick={() => copiar(empresa.client_secret, 'client_secret')} className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap">
                       {copiado === 'client_secret' ? '✓ Copiado' : 'Copiar'}
                     </button>
                   )}
                 </div>
               </div>
-
               <p className="text-gray-600 text-xs">⚠ Mantenha essas credenciais em segurança. Use-as para configurar o coletor desktop.</p>
             </div>
 
-            {/* Certificado */}
             <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-white text-sm font-semibold">Certificado Digital (A1)</p>
                 {!empresa.certificado_validade && <span className="text-gray-600 text-xs">Nenhum certificado cadastrado</span>}
               </div>
-
               {empresa.certificado_validade ? (
                 <div className="rounded-xl border border-gray-700 overflow-hidden">
                   <table className="w-full">
@@ -1016,11 +826,7 @@ function EmpresaDetalhe() {
                             ) : (
                               <div className="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5">
                                 <span className="text-gray-500 text-xs">Confirmar?</span>
-                                <button
-                                  onClick={removerCertificado}
-                                  disabled={removendoCert}
-                                  className="text-xs text-red-400 hover:text-red-300 font-semibold transition disabled:opacity-50"
-                                >
+                                <button onClick={removerCertificado} disabled={removendoCert} className="text-xs text-red-400 hover:text-red-300 font-semibold transition disabled:opacity-50">
                                   {removendoCert ? '…' : 'Sim'}
                                 </button>
                                 <button onClick={() => setConfirmarRemocao(false)} className="text-xs text-gray-500 hover:text-white transition">Não</button>
@@ -1053,10 +859,7 @@ function EmpresaDetalhe() {
                         placeholder="Digite a senha do .pfx"
                         className="flex-1 bg-gray-800/60 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 text-sm transition"
                       />
-                      <button
-                        onClick={() => setMostrarSenhaCert(!mostrarSenhaCert)}
-                        className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap"
-                      >
+                      <button onClick={() => setMostrarSenhaCert(!mostrarSenhaCert)} className="text-gray-500 hover:text-gray-300 text-xs transition whitespace-nowrap">
                         {mostrarSenhaCert ? 'Ocultar' : 'Revelar'}
                       </button>
                     </div>
@@ -1078,19 +881,12 @@ function EmpresaDetalhe() {
 
       {/* ── Modal Editar ── */}
       {modalEditarAberto && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4"
-          onClick={fecharModalEditar}
-        >
-          <div
-            className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4" onClick={fecharModalEditar}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
               <h2 className="text-white font-semibold">Editar Empresa</h2>
               <button onClick={fecharModalEditar} className="text-gray-500 hover:text-white transition text-xl leading-none">×</button>
             </div>
-
             <div className="px-6 py-5 space-y-4">
               {[
                 { name: 'razao_social', label: 'Razão Social', required: true },
@@ -1110,22 +906,14 @@ function EmpresaDetalhe() {
                     placeholder={field.placeholder}
                     className={inputCls(errosEdicao[field.name])}
                   />
-                  {errosEdicao[field.name] && (
-                    <p className="text-red-400 text-xs mt-1">{errosEdicao[field.name]}</p>
-                  )}
+                  {errosEdicao[field.name] && <p className="text-red-400 text-xs mt-1">{errosEdicao[field.name]}</p>}
                 </div>
               ))}
-
               <p className="text-gray-600 text-xs">CNPJ e Código Interno não podem ser alterados.</p>
               {erroGeralEdicao && <p className="text-red-400 text-xs">✕ {erroGeralEdicao}</p>}
             </div>
-
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-800">
-              <button
-                onClick={fecharModalEditar}
-                disabled={salvandoEdicao}
-                className="text-gray-500 hover:text-white text-sm transition disabled:opacity-50"
-              >
+              <button onClick={fecharModalEditar} disabled={salvandoEdicao} className="text-gray-500 hover:text-white text-sm transition disabled:opacity-50">
                 Cancelar
               </button>
               <BtnPrimary onClick={salvarEdicao} disabled={salvandoEdicao}>
@@ -1133,6 +921,304 @@ function EmpresaDetalhe() {
               </BtnPrimary>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Aba Inconsistências (componente separado para isolar os useState de paginação) ───
+
+function InconsistenciasAba({
+  empresa,
+  arquivoSefaz, setArquivoSefaz, analisando,
+  analisarInconsistencias, erroInconsistencia, setErroInconsistencia,
+  resultadoInconsistencias, setResultadoInconsistencias,
+}) {
+  const r = resultadoInconsistencias
+
+  const faltando  = usePagination(r?.faltando_no_sistema)
+  const extras    = usePagination(r?.extras_no_sistema)
+  const gapsSefaz = usePagination(r?.gaps_sequencia)
+  const gapsSist  = usePagination(r?.gaps_sistema)
+
+  const [gerandoXmls, setGerandoXmls] = useState({})
+  const [gerandoTodos, setGerandoTodos] = useState(false)
+
+  const gerarXml = async (notas) => {
+    const isTodos = notas.length > 1
+    if (isTodos) {
+      setGerandoTodos(true)
+    } else {
+      const key = `${notas[0].numero_nota}-${notas[0].serie}`
+      setGerandoXmls(g => ({ ...g, [key]: true }))
+    }
+
+    try {
+      const res = await api.post(
+        '/documentos/gerar-xml/',
+        { empresa_id: empresa.id, notas },
+        { responseType: 'blob' }
+      )
+
+      const contentType = res.headers['content-type'] || ''
+      const isZip = contentType.includes('zip')
+      const filename = isZip
+        ? `xmls_reconstituidos_${empresa.codigo_interno}.zip`
+        : `${notas[0].numero_nota}_serie${notas[0].serie}_reconstituido.xml`
+
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: contentType }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', filename)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('ERRO GERAR XML:', err)
+      let msg = 'Erro ao gerar XML.'
+      try {
+        const blob = err.response?.data
+        if (blob instanceof Blob) {
+          const text = await blob.text()
+          msg = JSON.parse(text)?.detail || msg
+        }
+      } catch (e){
+        console.error('erro ao ler blob:', e)
+      }
+      alert(msg)
+    } finally {
+      if (isTodos) {
+        setGerandoTodos(false)
+      } else {
+        const key = `${notas[0].numero_nota}-${notas[0].serie}`
+        setGerandoXmls(g => ({ ...g, [key]: false }))
+      }
+    }
+  }
+
+  const toNotaPayload = (item) => ({
+    numero_nota: item.numero,
+    serie: item.serie,
+    valor_total: item.valor_total,
+    data_emissao: item.data_emissao?.split('T')[0] || item.data_emissao,
+  })
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-gray-900/60 rounded-xl border border-gray-800 p-6">
+        <p className="text-white text-sm font-semibold mb-1">Analisar planilha da SEFAZ</p>
+        <p className="text-gray-500 text-xs mb-4">
+          Importe o arquivo .xls exportado do portal da SEFAZ para verificar inconsistências com os documentos do sistema.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".xls,.xlsx"
+            onChange={(e) => {
+              setArquivoSefaz(e.target.files[0])
+              setResultadoInconsistencias(null)
+              setErroInconsistencia('')
+            }}
+            className="flex-1 bg-gray-800/60 text-gray-400 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400/70 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-yellow-400/10 file:text-yellow-400 file:text-xs cursor-pointer transition"
+          />
+          <BtnPrimary onClick={analisarInconsistencias} disabled={analisando || !arquivoSefaz}>
+            {analisando ? 'Analisando…' : 'Analisar'}
+          </BtnPrimary>
+        </div>
+        {erroInconsistencia && <p className="text-red-400 text-xs mt-3">✕ {erroInconsistencia}</p>}
+      </div>
+
+      {r && (
+        <div className="space-y-4">
+
+          {/* ── Summary cards ── */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 text-center">
+              <p className="text-gray-500 text-xs mb-1">Notas na SEFAZ</p>
+              <p className="text-white text-2xl font-bold">{r.total_sefaz}</p>
+            </div>
+            <div className={`rounded-xl border p-4 text-center ${r.faltando_no_sistema.length > 0 ? 'bg-red-400/5 border-red-400/20' : 'bg-gray-900/60 border-gray-800'}`}>
+              <p className="text-gray-500 text-xs mb-1">Faltando no sistema</p>
+              <p className={`text-2xl font-bold ${r.faltando_no_sistema.length > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                {r.faltando_no_sistema.length}
+              </p>
+            </div>
+            <div className={`rounded-xl border p-4 text-center ${r.gaps_sequencia.length > 0 ? 'bg-orange-400/5 border-orange-400/20' : 'bg-gray-900/60 border-gray-800'}`}>
+              <p className="text-gray-500 text-xs mb-1">Gaps na SEFAZ</p>
+              <p className={`text-2xl font-bold ${r.gaps_sequencia.length > 0 ? 'text-orange-400' : 'text-green-400'}`}>
+                {r.gaps_sequencia.length}
+              </p>
+            </div>
+            <div className={`rounded-xl border p-4 text-center ${r.gaps_sistema.length > 0 ? 'bg-purple-400/5 border-purple-400/20' : 'bg-gray-900/60 border-gray-800'}`}>
+              <p className="text-gray-500 text-xs mb-1">Gaps no sistema</p>
+              <p className={`text-2xl font-bold ${r.gaps_sistema.length > 0 ? 'text-purple-400' : 'text-green-400'}`}>
+                {r.gaps_sistema.length}
+              </p>
+            </div>
+            <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 text-center">
+              <p className="text-gray-500 text-xs mb-1">Valor total (SEFAZ)</p>
+              <p className="text-white text-lg font-bold">
+                {r.valor_total_sefaz
+                  ? `R$ ${parseFloat(r.valor_total_sefaz).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                  : '—'}
+              </p>
+            </div>
+          </div>
+
+          {/* Tudo ok */}
+          {r.faltando_no_sistema.length === 0 &&
+           r.extras_no_sistema.length === 0 &&
+           r.gaps_sequencia.length === 0 &&
+           r.gaps_sistema.length === 0 && (
+            <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-5 flex items-center gap-3">
+              <span className="text-xl">✓</span>
+              <p className="text-green-400 text-sm font-medium">Nenhuma inconsistência encontrada! Todos os documentos estão em conformidade.</p>
+            </div>
+          )}
+
+          {/* ── Faltando no sistema ── */}
+          {r.faltando_no_sistema.length > 0 && (
+            <div className="bg-gray-900/60 rounded-xl border border-red-400/20 overflow-hidden">
+              <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
+                <span className="text-red-400 text-sm font-medium">Notas na SEFAZ ausentes no sistema</span>
+                <Badge color="red">{r.faltando_no_sistema.length}</Badge>
+                <button
+                  onClick={() => gerarXml(r.faltando_no_sistema.map(toNotaPayload))}
+                  disabled={gerandoTodos}
+                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-yellow-500/40 text-yellow-400 text-xs font-medium bg-transparent hover:bg-yellow-400/10 hover:border-yellow-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {gerandoTodos ? 'Gerando…' : '⬇ Gerar todos os XMLs'}
+                </button>
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    {['Número', 'Série', 'Situação SEFAZ', 'Data Emissão', 'Valor Total', ''].map(h => (
+                      <th key={h} className={`text-gray-500 text-xs px-6 py-3 font-medium ${h === '' ? 'text-right' : 'text-left'}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {faltando.paginados.map((item, i) => {
+                    const key = `${item.numero}-${item.serie}`
+                    const gerando = gerandoXmls[key]
+                    return (
+                      <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
+                        <td className="px-6 py-3 text-white font-mono text-sm">{item.numero}</td>
+                        <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
+                        <td className="px-6 py-3">
+                          <Badge color={item.situacao === 'Autorizada' ? 'green' : 'red'}>{item.situacao}</Badge>
+                        </td>
+                        <td className="px-6 py-3 text-gray-400 text-sm">{item.data_emissao}</td>
+                        <td className="px-6 py-3 text-white text-sm">R$ {item.valor_total}</td>
+                        <td className="px-6 py-3 text-right">
+                          <button
+                            onClick={() => gerarXml([toNotaPayload(item)])}
+                            disabled={gerando || gerandoTodos}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-700 text-gray-300 text-xs font-medium bg-transparent hover:bg-gray-800 hover:border-gray-600 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {gerando ? '…' : '⬇ XML'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <PaginacaoTabela pagina={faltando.pagina} totalPaginas={faltando.totalPaginas} setPagina={faltando.setPagina} label={`${r.faltando_no_sistema.length} notas`} />
+            </div>
+          )}
+
+          {/* ── Extras no sistema ── */}
+          {r.extras_no_sistema.length > 0 && (
+            <div className="bg-gray-900/60 rounded-xl border border-yellow-400/20 overflow-hidden">
+              <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
+                <span className="text-yellow-400 text-sm font-medium">Notas no sistema ausentes na SEFAZ</span>
+                <Badge color="yellow">{r.extras_no_sistema.length}</Badge>
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    {['Número', 'Série', 'Status Sistema', 'Chave de Acesso'].map(h => (
+                      <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {extras.paginados.map((item, i) => (
+                    <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
+                      <td className="px-6 py-3 text-white font-mono text-sm">{item.numero}</td>
+                      <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
+                      <td className="px-6 py-3"><Badge color={item.status === 'autorizado' ? 'green' : 'red'}>{item.status}</Badge></td>
+                      <td className="px-6 py-3 text-gray-500 text-xs font-mono">{item.chave_acesso}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <PaginacaoTabela pagina={extras.pagina} totalPaginas={extras.totalPaginas} setPagina={extras.setPagina} label={`${r.extras_no_sistema.length} notas`} />
+            </div>
+          )}
+
+          {/* ── Gaps na sequência da SEFAZ ── */}
+          {r.gaps_sequencia.length > 0 && (
+            <div className="bg-gray-900/60 rounded-xl border border-orange-400/20 overflow-hidden">
+              <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
+                <span className="text-orange-400 text-sm font-medium">Gaps na sequência numérica da SEFAZ</span>
+                <Badge color="orange">{r.gaps_sequencia.length}</Badge>
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    {['Série', 'Número faltante', 'Entre as notas'].map(h => (
+                      <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {gapsSefaz.paginados.map((item, i) => (
+                    <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
+                      <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
+                      <td className="px-6 py-3 text-orange-400 font-mono font-medium text-sm">{item.numero}</td>
+                      <td className="px-6 py-3 text-gray-500 text-sm">{item.entre}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <PaginacaoTabela pagina={gapsSefaz.pagina} totalPaginas={gapsSefaz.totalPaginas} setPagina={gapsSefaz.setPagina} label={`${r.gaps_sequencia.length} gaps`} />
+            </div>
+          )}
+
+          {/* ── Gaps na sequência do SISTEMA ── */}
+          {r.gaps_sistema.length > 0 && (
+            <div className="bg-gray-900/60 rounded-xl border border-purple-400/20 overflow-hidden">
+              <div className="px-6 py-3.5 border-b border-gray-800 flex items-center gap-2">
+                <span className="text-purple-400 text-sm font-medium">Gaps na sequência numérica do sistema</span>
+                <Badge color="purple">{r.gaps_sistema.length}</Badge>
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    {['Série', 'Número faltante', 'Entre as notas'].map(h => (
+                      <th key={h} className="text-left text-gray-500 text-xs px-6 py-3 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {gapsSist.paginados.map((item, i) => (
+                    <tr key={i} className="border-b border-gray-800/60 hover:bg-gray-800/30">
+                      <td className="px-6 py-3 text-gray-400 text-sm">{item.serie}</td>
+                      <td className="px-6 py-3 text-purple-400 font-mono font-medium text-sm">{item.numero}</td>
+                      <td className="px-6 py-3 text-gray-500 text-sm">{item.entre}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <PaginacaoTabela pagina={gapsSist.pagina} totalPaginas={gapsSist.totalPaginas} setPagina={gapsSist.setPagina} label={`${r.gaps_sistema.length} gaps`} />
+            </div>
+          )}
+
         </div>
       )}
     </div>

@@ -9,26 +9,27 @@ from ui.tray import TrayIcon
 
 def main():
     app = QApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(False)  # não fecha ao fechar a janela
+    app.setQuitOnLastWindowClosed(False)
 
-    # Inicializa os componentes
     config_manager = ConfigManager()
     api_client = ApiClient(config_manager)
 
-    # Carrega as pastas configuradas
     config = config_manager.carregar()
-    pastas = config.get('pastas', [])
+    print("Config carregada:", config)         # ← ver o que veio
+    pastas = config.get('pastas', {})  # ← garante dict, não lista
+    print("Pastas:", pastas)                   # ← ver as pastas
+    print("Any:", any(pastas.values()))        # ← ver se entra no if
 
-    # Inicia o watcher se tiver pastas configuradas
     watcher = FolderWatcher(api_client, pastas)
-    if pastas:
+    if any(pastas.values()):  # ← só inicia se tiver ao menos uma pasta preenchida
         watcher.iniciar()
 
-    # Cria a interface
     config_window = ConfigWindow(config_manager, api_client)
     tray = TrayIcon(config_window, watcher)
 
-    # Se não tiver configuração, abre a janela automaticamente
+    # ← CRÍTICO: garante que o watcher para limpo ao fechar o app
+    app.aboutToQuit.connect(watcher.parar)
+
     if not config.get('api_url') or not config.get('client_id'):
         config_window.show()
 

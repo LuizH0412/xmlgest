@@ -29,6 +29,9 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from decimal import Decimal
 import zipfile
 from apps.documentos.models import ExportacaoXml
+import zipfile
+from io import BytesIO
+from apps.documentos.gerar_xml_service import gerar_xml_nota
 
 
 class DocumentoViewSet(viewsets.ModelViewSet):
@@ -436,8 +439,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             df['serie'] = pd.to_numeric(df['serie'], errors='coerce').fillna(1).astype(int).astype(str)
             df['situacao'] = df['situacao'].astype(str).str.strip()
 
-        except Response:
-            raise
         except Exception as e:
             return Response({'detail': f'Erro ao ler planilha: {str(e)}'}, status=400)
 
@@ -488,6 +489,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                     'valor_total': str(doc['valor_total']),
                 })
 
+        # ── Gaps na sequência da SEFAZ ────────────────────────────────────────
         gaps = []
         series_sefaz = {}
         for (serie, numero) in sefaz_notas:
@@ -506,9 +508,38 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                             'entre': f'{atual} e {proximo}',
                         })
 
+        # ── Gaps na sequência do SISTEMA ─────────────────────────────────────
+        gaps_sistema = []
+        series_sistema = {}
+        for (serie, numero) in sistema_map.keys():
+            series_sistema.setdefault(serie, []).append(int(numero))
+
+        for serie, numeros in series_sistema.items():
+            numeros_sorted = sorted(numeros)
+            for i in range(len(numeros_sorted) - 1):
+                atual = numeros_sorted[i]
+                proximo = numeros_sorted[i + 1]
+                if proximo - atual > 1:
+                    for faltante in range(atual + 1, proximo):
+                        gaps_sistema.append({
+                            'serie': serie,
+                            'numero': faltante,
+                            'entre': f'{atual} e {proximo}',
+                        })
+
+        # ── Valor total da planilha ───────────────────────────────────────────
+        valor_total_sefaz = Decimal('0')
+        if 'valor_total' in df.columns:
+            total = pd.to_numeric(
+                df['valor_total'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
+                errors='coerce'
+            ).sum()
+            valor_total_sefaz = Decimal(str(round(total, 2)))
+
         return Response({
             'empresa': empresa.nome_fantasia,
             'total_sefaz': len(df),
+            'valor_total_sefaz': str(valor_total_sefaz),
             'periodo': {
                 'inicio': str(data_min) if data_min else None,
                 'fim': str(data_max) if data_max else None,
@@ -516,6 +547,7 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             'faltando_no_sistema': faltando_no_sistema,
             'extras_no_sistema': extras_no_sistema,
             'gaps_sequencia': gaps,
+            'gaps_sistema': gaps_sistema,
         })
 
     @action(detail=False, methods=['post'], url_path='enviar-xmls')
@@ -591,3 +623,132 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             filename=os.path.basename(exportacao.caminho_arquivo),
             content_type='application/zip'
         )
+    
+
+    @action(detail=False, methods=['post'], url_path='gerar-xml')
+    def gerar_xml(self, request):
+        """
+        Gera XMLs reconstituídos para notas ausentes no sistema.
+ 
+        Body JSON:
+        {
+            "empresa_id": 1,
+            "notas": [
+                {
+                    "numero_nota": "188",
+                    "serie": "11",
+                    "valor_total": "91.19",
+                    "data_emissao": "2026-05-17"
+                }
+            ]
+        }
+ 
+        Retorna:
+        - XML direto (application/xml) se apenas uma nota sem erros
+        - ZIP (application/zip) se múltiplas notas
+        """
+        from apps.documentos.gerar_xml_service import gerar_xml_nota
+        from decimal import Decimal
+ 
+        empresa_id = request.data.get('empresa_id')
+        notas = request.data.get('notas', [])
+ 
+        if not empresa_id or not notas:
+            return Response(
+                {'detail': 'empresa_id e notas são obrigatórios.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        try:
+            empresa = Empresa.objects.get(id=empresa_id)
+        except Empresa.DoesNotExist:
+            return Response({'detail': 'Empresa não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        resultados = []
+        erros = []
+ 
+        for nota in notas:
+            numero_nota = nota.get('numero_nota')
+            try:
+                xml_bytes, chave = gerar_xml_nota(
+                    empresa=empresa,
+                    numero_nota=numero_nota,
+                    serie=nota.get('serie'),
+                    valor_total_sefaz=nota.get('valor_total'),
+                    data_emissao=nota.get('data_emissao'),
+                )
+ 
+                if Documento.objects.filter(chave_acesso=chave).exists():
+                    erros.append({'nota': numero_nota, 'erro': 'Documento já existe no sistema.'})
+                    continue
+ 
+                # Salva arquivo no disco
+                from datetime import datetime as dt
+                data = dt.strptime(nota.get('data_emissao'), '%Y-%m-%d').date()
+                nome_arquivo = f"{chave}-reconstituido.xml"
+                caminho = f"xmls/{empresa.codigo_interno}/NFe/{data.year}/{data.month:02d}/{nome_arquivo}"
+                caminho_completo = os.path.join('media', caminho)
+                os.makedirs(os.path.dirname(caminho_completo), exist_ok=True)
+ 
+                with open(caminho_completo, 'wb') as f:
+                    f.write(xml_bytes)
+ 
+                # Salva Documento no banco
+                enviado_por = None if isinstance(request.user, ColetorUser) else request.user
+                documento = Documento.objects.create(
+                    empresa=empresa,
+                    chave_acesso=chave,
+                    tipo='NFe',
+                    numero_nota=numero_nota,
+                    serie=nota.get('serie'),
+                    data_emissao=data,
+                    valor_total=Decimal(str(nota.get('valor_total'))),
+                    status='autorizado',
+                    caminho_arquivo=caminho,
+                    enviado_por=enviado_por,
+                )
+ 
+                # Salva itens via extrair_dados do XML gerado
+                from apps.documentos.services import extrair_dados
+                arquivo_virtual = BytesIO(xml_bytes)
+                arquivo_virtual.name = nome_arquivo
+                dados = extrair_dados(arquivo_virtual)
+                ItemDocumento.objects.bulk_create([
+                    ItemDocumento(documento=documento, empresa=empresa, **item)
+                    for item in dados.get('itens', [])
+                ])
+ 
+                resultados.append({
+                    'nota': numero_nota,
+                    'chave': chave,
+                    'xml': xml_bytes,
+                    'nome': nome_arquivo,
+                })
+ 
+            except Exception as e:
+                erros.append({'nota': numero_nota, 'erro': str(e)})
+ 
+        if not resultados:
+            return Response(
+                {'detail': 'Nenhum XML gerado.', 'erros': erros},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        # Retorno: XML direto (1 nota) ou ZIP (múltiplas)
+        if len(resultados) == 1:
+            r = resultados[0]
+            from django.http import HttpResponse as HR
+            response = HR(r['xml'], content_type='application/xml')
+            response['Content-Disposition'] = f'attachment; filename="{r["nome"]}"'
+            return response
+ 
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for r in resultados:
+                zf.writestr(r['nome'], r['xml'])
+        zip_buffer.seek(0)
+ 
+        from django.http import HttpResponse as HR
+        response = HR(zip_buffer.read(), content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="xmls_reconstituidos_{empresa.codigo_interno}.zip"'
+        return response
