@@ -36,7 +36,7 @@ def _carregar_certificado(empresa):
     """
     Carrega o certificado PFX da empresa e retorna (private_key_pem, cert_pem).
     """
-    from apps.empresas.utils import descriptografar_senha
+    from apps.empresas.crypto import descriptografar_senha
 
     if not empresa.certificado_pfx or not empresa.certificado_senha:
         raise ValueError('Empresa não possui certificado digital cadastrado.')
@@ -64,11 +64,14 @@ def _carregar_certificado(empresa):
 
 
 def _assinar_xml(xml_bytes, private_key_pem, cert_pem):
-    """
-    Assina o XML usando o certificado A1 da empresa.
-    Retorna xml_bytes assinado.
-    """
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.x509 import load_pem_x509_certificate
+    import base64
+    import hashlib
+
     root = etree.fromstring(xml_bytes)
+    NS_SIG = 'http://www.w3.org/2000/09/xmldsig#'
 
     inf_nfe = root.find(f'.//{{{NS}}}infNFe')
     if inf_nfe is None:
@@ -76,29 +79,105 @@ def _assinar_xml(xml_bytes, private_key_pem, cert_pem):
 
     ref_uri = inf_nfe.get('Id')
 
-    signer = XMLSigner(
-        method=methods.enveloped,
-        signature_algorithm='rsa-sha1',
-        digest_algorithm='sha1',
-        c14n_algorithm='http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
-    )
+    # Canonicaliza o infNFe (C14N)
+    inf_nfe_c14n = etree.tostring(inf_nfe, method='c14n', exclusive=False, with_comments=False)
 
-    signed_root = signer.sign(
-        root,
-        key=private_key_pem,
-        cert=cert_pem,
-        reference_uri=f'#{ref_uri}',
-    )
+    # DigestValue do infNFe
+    digest = hashlib.sha1(inf_nfe_c14n).digest()
+    digest_b64 = base64.b64encode(digest).decode()
+
+    # Monta SignedInfo
+    signed_info_xml = f'''<SignedInfo xmlns="{NS_SIG}">
+<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+<Reference URI="#{ref_uri}">
+<Transforms>
+<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+<Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+</Transforms>
+<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+<DigestValue>{digest_b64}</DigestValue>
+</Reference>
+</SignedInfo>'''
+
+    signed_info_el = etree.fromstring(signed_info_xml.encode())
+    signed_info_c14n = etree.tostring(signed_info_el, method='c14n', exclusive=False, with_comments=False)
+
+    # Carrega chave privada e assina
+    private_key = serialization.load_pem_private_key(private_key_pem, password=None)
+    signature_bytes = private_key.sign(signed_info_c14n, padding.PKCS1v15(), hashes.SHA1())
+    signature_b64 = base64.b64encode(signature_bytes).decode()
+
+    # Extrai X509Certificate do cert_pem
+    cert = load_pem_x509_certificate(cert_pem)
+    cert_der = cert.public_bytes(serialization.Encoding.DER)
+    cert_b64 = base64.b64encode(cert_der).decode()
+
+    # Monta o bloco <Signature> completo
+    signature_xml = f'''<Signature xmlns="{NS_SIG}">
+{signed_info_xml}
+<SignatureValue>{signature_b64}</SignatureValue>
+<KeyInfo>
+<X509Data>
+<X509Certificate>{cert_b64}</X509Certificate>
+</X509Data>
+</KeyInfo>
+</Signature>'''
+
+    sig_el = etree.fromstring(signature_xml.encode())
+    root.append(sig_el)
 
     return etree.tostring(
-        signed_root,
+        root,
+        xml_declaration=True,
+        encoding='UTF-8',
+        pretty_print=False,
+    )
+
+def _adicionar_protocolo(xml_bytes, chave, protocolo, data_emissao, ver_aplic='NFCe_v4.00'):
+    NS_NFE = 'http://www.portalfiscal.inf.br/nfe'
+    
+    # Registra o namespace para evitar ns0
+    etree.register_namespace = lambda *a: None  # lxml não usa register_namespace
+    nsmap = {None: NS_NFE}  # namespace padrão sem prefixo
+
+    nfe_root = etree.fromstring(xml_bytes)
+
+    if nfe_root.tag == f'{{{NS_NFE}}}nfeProc':
+        nfe_el = nfe_root.find(f'{{{NS_NFE}}}NFe')
+    else:
+        nfe_el = nfe_root
+
+    if isinstance(data_emissao, str):
+        from datetime import datetime as dt
+        data_emissao = dt.strptime(data_emissao, '%Y-%m-%d').date()
+
+    data_str = f"{data_emissao.isoformat()}T00:00:00-03:00"
+
+    nfe_proc = etree.Element(f'{{{NS_NFE}}}nfeProc', attrib={'versao': '4.00'}, nsmap=nsmap)
+    nfe_proc.append(nfe_el)
+
+    prot_nfe = etree.SubElement(nfe_proc, f'{{{NS_NFE}}}protNFe', attrib={'versao': '4.00'})
+    inf_prot = etree.SubElement(prot_nfe, f'{{{NS_NFE}}}infProt')
+
+    etree.SubElement(inf_prot, f'{{{NS_NFE}}}tpAmb').text = '1'
+    etree.SubElement(inf_prot, f'{{{NS}}}verAplic').text = ver_aplic
+    etree.SubElement(inf_prot, f'{{{NS_NFE}}}chNFe').text = chave
+    etree.SubElement(inf_prot, f'{{{NS_NFE}}}dhRecbto').text = data_str
+    etree.SubElement(inf_prot, f'{{{NS_NFE}}}nProt').text = str(protocolo)
+    etree.SubElement(inf_prot, f'{{{NS_NFE}}}digVal').text = ''
+    etree.SubElement(inf_prot, f'{{{NS_NFE}}}cStat').text = '100'
+    etree.SubElement(inf_prot, f'{{{NS_NFE}}}xMotivo').text = 'Autorizado o uso da NF-e'
+
+    return etree.tostring(
+        nfe_proc,
         xml_declaration=True,
         encoding='UTF-8',
         pretty_print=False,
     )
 
 
-def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao):
+def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao, chave_acesso=None, protocolo=None, natureza_operacao=None):
     """
     Reconstrói e assina um XML de NF-e usando:
     - XML mais recente da empresa como modelo (estrutura, emitente, destinatário)
@@ -128,6 +207,8 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
     root = copy.deepcopy(tree.getroot())
 
     # ── 2. Itens de referência (mais recentes, sem duplicar descrição) ───────
+    import random as _random
+
     itens_ref = list(
         ItemDocumento.objects
         .filter(empresa=empresa)
@@ -147,6 +228,10 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
         if it['descricao'] not in vistos:
             vistos.add(it['descricao'])
             itens_unicos.append(it)
+    
+    # Limita a no máximo 5, mínimo 1
+    max_itens = _random.randint(1, 5)
+    itens_unicos = itens_unicos[:max_itens]
 
     # ── 3. Rateio proporcional ───────────────────────────────────────────────
     valor_total = Decimal(str(valor_total_sefaz))
@@ -182,10 +267,23 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
         el = root.find(path, NS_MAP)
         if el is not None:
             el.text = text
+    
+    # Usa chave real da planilha
+    chave = ''.join(filter(str.isdigit, chave_acesso or ''))
+    if len(chave) != 44:
+        raise ValueError('Chave de acesso inválida ou ausente.')
+
+    c_nf = chave[35:43]
 
     _upd('.//nfe:ide/nfe:nNF', str(numero_nota))
     _upd('.//nfe:ide/nfe:serie', str(serie))
+    _upd('.//nfe:ide/nfe:mod', '65')  # sempre NFC-e
     _upd('.//nfe:ide/nfe:dhEmi', f"{data_emissao.isoformat()}T00:00:00-03:00")
+    _upd('.//nfe:ide/nfe:cNF', c_nf)
+    _upd('.//nfe:ide/nfe:cDV', chave[-1])
+
+    if natureza_operacao:
+        _upd('.//nfe:ide/nfe:natOp', natureza_operacao)
 
     dhsaient = root.find('.//nfe:ide/nfe:dhSaiEnt', NS_MAP)
     if dhsaient is not None:
@@ -203,6 +301,10 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
     for idx, it in enumerate(itens_rateados, start=1):
         det = etree.Element(f'{{{NS}}}det', attrib={'nItem': str(idx)})
 
+        # Calcula vOutro (10% do valor, arredondado)
+        v_outro = (it['val'] * Decimal('0.1')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        v_item = it['val'] + v_outro
+
         prod = etree.SubElement(det, f'{{{NS}}}prod')
         _set(prod, 'cProd', str(idx).zfill(6))
         _set(prod, 'cEAN', 'SEM GTIN')
@@ -211,23 +313,25 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
         if it.get('cest'):
             _set(prod, 'CEST', it['cest'])
         _set(prod, 'CFOP', it['cfop'] or '5102')
-        _set(prod, 'uCom', 'UN')
+        _set(prod, 'uCom', 'UND')
         _set(prod, 'qCom', f"{it['qtd']:.4f}")
-        _set(prod, 'vUnCom', f"{it['v_unit']:.7f}")
+        _set(prod, 'vUnCom', f"{it['v_unit']:.10f}")
         _set(prod, 'vProd', f"{it['val']:.2f}")
         _set(prod, 'cEANTrib', 'SEM GTIN')
-        _set(prod, 'uTrib', 'UN')
+        _set(prod, 'uTrib', 'UND')
         _set(prod, 'qTrib', f"{it['qtd']:.4f}")
-        _set(prod, 'vUnTrib', f"{it['v_unit']:.7f}")
+        _set(prod, 'vUnTrib', f"{it['v_unit']:.10f}")
+        _set(prod, 'vOutro', f"{v_outro:.2f}")
         _set(prod, 'indTot', '1')
 
         imposto = etree.SubElement(det, f'{{{NS}}}imposto')
+        _set(imposto, 'vTotTrib', '0.00')
 
         # ICMS
         icms_wrap = etree.SubElement(imposto, f'{{{NS}}}ICMS')
-        cst_icms = str(it.get('cst_icms') or '00')
+        cst_icms = str(it.get('cst_icms') or '102')
         if len(cst_icms) == 3:  # CSOSN (Simples Nacional)
-            icms_tipo = etree.SubElement(icms_wrap, f'{{{NS}}}ICMSSN102')
+            icms_tipo = etree.SubElement(icms_wrap, f'{{{NS}}}ICMSSN{cst_icms}')
             _set(icms_tipo, 'orig', '0')
             _set(icms_tipo, 'CSOSN', cst_icms)
         else:
@@ -243,11 +347,8 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
         pis_wrap = etree.SubElement(imposto, f'{{{NS}}}PIS')
         cst_pis = str(it.get('cst_pis') or '07')
         if cst_pis in ('07', '08', '09'):
-            pis_tipo = etree.SubElement(pis_wrap, f'{{{NS}}}PISOutr')
+            pis_tipo = etree.SubElement(pis_wrap, f'{{{NS}}}PISNT')
             _set(pis_tipo, 'CST', cst_pis)
-            _set(pis_tipo, 'vBC', '0.00')
-            _set(pis_tipo, 'pPIS', '0.00')
-            _set(pis_tipo, 'vPIS', '0.00')
         else:
             pis_tipo = etree.SubElement(pis_wrap, f'{{{NS}}}PISAliq')
             _set(pis_tipo, 'CST', cst_pis.zfill(2))
@@ -259,11 +360,8 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
         cofins_wrap = etree.SubElement(imposto, f'{{{NS}}}COFINS')
         cst_cofins = str(it.get('cst_cofins') or '07')
         if cst_cofins in ('07', '08', '09'):
-            cof_tipo = etree.SubElement(cofins_wrap, f'{{{NS}}}COFINSOutr')
+            cof_tipo = etree.SubElement(cofins_wrap, f'{{{NS}}}COFINSNT')
             _set(cof_tipo, 'CST', cst_cofins)
-            _set(cof_tipo, 'vBC', '0.00')
-            _set(cof_tipo, 'pCOFINS', '0.00')
-            _set(cof_tipo, 'vCOFINS', '0.00')
         else:
             cof_tipo = etree.SubElement(cofins_wrap, f'{{{NS}}}COFINSAliq')
             _set(cof_tipo, 'CST', cst_cofins.zfill(2))
@@ -271,36 +369,71 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
             _set(cof_tipo, 'pCOFINS', '0.00')
             _set(cof_tipo, 'vCOFINS', '0.00')
 
+        # vItem no final do det
+        _set(det, 'vItem', f"{v_item:.2f}")
+
         inf_nfe_el.insert(total_idx + idx - 1, det)
 
     # ── 6. Atualiza totais ───────────────────────────────────────────────────
+    v_prod = sum(it['val'] for it in itens_rateados)
+    v_outro_total = sum((it['val'] * Decimal('0.1')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) for it in itens_rateados)
+    v_nf = v_prod + v_outro_total
+
+    # Reconstrói ICMSTot na ordem correta
     icms_tot = root.find('.//nfe:total/nfe:ICMSTot', NS_MAP)
     if icms_tot is not None:
-        for campo in ['vBC','vICMS','vICMSDeson','vFCP','vBCST','vST','vFCPST',
-                      'vFCPSTRet','vFrete','vSeg','vDesc','vII','vIPI',
-                      'vIPIDevol','vPIS','vCOFINS','vOutro']:
-            el = icms_tot.find(f'nfe:{campo}', NS_MAP)
-            if el is not None:
-                el.text = '0.00'
-        for campo in ['vNF', 'vProd']:
-            el = icms_tot.find(f'nfe:{campo}', NS_MAP)
-            if el is not None:
-                el.text = f"{valor_total:.2f}"
+        icms_tot.clear()
+        campos = [
+            ('vBC', '0.00'), ('vICMS', '0.00'), ('vICMSDeson', '0.00'),
+            ('vFCPUFDest', '0.00'), ('vICMSUFDest', '0.00'), ('vICMSUFRemet', '0.00'),
+            ('vFCP', '0.00'), ('vBCST', '0.00'), ('vST', '0.00'),
+            ('vFCPST', '0.00'), ('vFCPSTRet', '0.00'),
+            ('qBCMonoRet', '0.00'), ('vICMSMonoRet', '0.00'),
+            ('vProd', f'{v_prod:.2f}'),
+            ('vFrete', '0.00'), ('vSeg', '0.00'), ('vDesc', '0.00'),
+            ('vII', '0.00'), ('vIPI', '0.00'), ('vIPIDevol', '0.00'),
+            ('vPIS', '0.00'), ('vCOFINS', '0.00'),
+            ('vOutro', f'{v_outro_total:.2f}'),
+            ('vNF', f'{v_nf:.2f}'),
+            ('vTotTrib', '0.00'),
+        ]
+        for tag, val in campos:
+            el = etree.SubElement(icms_tot, f'{{{NS}}}{tag}')
+            el.text = val
 
-    # ── 7. Gera chave de acesso ──────────────────────────────────────────────
-    cnpj = empresa.cnpj.replace('.','').replace('/','').replace('-','')
-    ano_mes = data_emissao.strftime('%y%m')
-    serie_str = str(serie).zfill(3)
-    n_nota_str = str(numero_nota).zfill(9)
-    c_nf = str(random.randint(10000000, 99999999))
+    # ── 6b. Atualiza pagamento ────────────────────────────────────────────────
+    det_pag = root.find('.//nfe:pag/nfe:detPag', NS_MAP)
+    if det_pag is not None:
+        det_pag.clear()
+        _set(det_pag, 'indPag', '0')
+        _set(det_pag, 'tPag', '01')  # 01 = dinheiro (genérico)
+        _set(det_pag, 'vPag', f'{v_nf:.2f}')
 
-    cuf_el = root.find('.//nfe:ide/nfe:cUF', NS_MAP)
-    cuf = cuf_el.text if cuf_el is not None else '41'
+    # Remove vTroco se existir
+    pag_el = root.find('.//nfe:pag', NS_MAP)
+    if pag_el is not None:
+        v_troco = pag_el.find(f'{{{NS}}}vTroco')
+        if v_troco is not None:
+            pag_el.remove(v_troco)
 
-    chave_43 = f"{cuf}{ano_mes}{cnpj}55{serie_str}{n_nota_str}1{c_nf}"
-    dv = _calc_dv(chave_43)
-    chave = chave_43 + str(dv)
+    # ── 6c. Garante indIntermed no ide ───────────────────────────────────────
+    ide_el = root.find('.//nfe:ide', NS_MAP)
+    if ide_el is not None and ide_el.find(f'{{{NS}}}indIntermed') is None:
+        proc_emi = ide_el.find(f'{{{NS}}}procEmi')
+        if proc_emi is not None:
+            idx_proc = list(ide_el).index(proc_emi)
+            ind = etree.Element(f'{{{NS}}}indIntermed')
+            ind.text = '0'
+            ide_el.insert(idx_proc, ind)
 
+    # ── 6d. Garante infAdic ───────────────────────────────────────────────────
+    inf_nfe_el2 = root.find(f'.//{{{NS}}}infNFe')
+    if inf_nfe_el2 is not None and inf_nfe_el2.find(f'{{{NS}}}infAdic') is None:
+        inf_adic = etree.SubElement(inf_nfe_el2, f'{{{NS}}}infAdic')
+        inf_cpl = etree.SubElement(inf_adic, f'{{{NS}}}infCpl')
+        inf_cpl.text = 'XML reconstituido'
+
+    # ── 7. Aplica chave de acesso da planilha ────────────────────────────────
     inf_nfe = root.find('.//nfe:infNFe', NS_MAP)
     inf_nfe.set('Id', f'NFe{chave}')
 
@@ -325,5 +458,11 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao)
     # ── 9. Assina com certificado A1 da empresa ──────────────────────────────
     private_key_pem, cert_pem = _carregar_certificado(empresa)
     xml_bytes_assinado = _assinar_xml(xml_bytes, private_key_pem, cert_pem)
+
+    # ── 10. Envolve em nfeProc com protocolo real ─────────────────────────────
+    ver_aplic_el = root.find('.//nfe:verAplic', NS_MAP)
+    ver_aplic = ver_aplic_el.text if ver_aplic_el is not None else 'NFCe_v4.00'
+    if protocolo:
+        xml_bytes_assinado = _adicionar_protocolo(xml_bytes_assinado, chave, protocolo, data_emissao, ver_aplic)
 
     return xml_bytes_assinado, chave

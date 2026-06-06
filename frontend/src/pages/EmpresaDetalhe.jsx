@@ -4,6 +4,7 @@ import Navbar from '../components/Navbar'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import DateRangePicker from '../components/DateRangePicker'
+import { ModalConfirmacao } from '../components/ModalConfirmacao'
 
 // ─── Button Primitives ────────────────────────────────────────────────────────
 
@@ -165,6 +166,8 @@ function EmpresaDetalhe() {
   const [pagina, setPagina] = useState(1)
   const [total, setTotal] = useState(0)
 
+  const [modalExcluir, setModalExcluir] = useState(null) // guarda a chave de acesso do doc a excluir
+
   const [gerandoRelatorio, setGerandoRelatorio] = useState(null)
 
   const [arquivoSefaz, setArquivoSefaz] = useState(null)
@@ -303,6 +306,17 @@ function EmpresaDetalhe() {
       link.remove()
       window.URL.revokeObjectURL(url)
     } catch { alert('Erro ao baixar PDF.') }
+  }
+
+  const excluirDocumento = async () => {
+    try {
+      await api.delete(`/documentos/${modalExcluir}/`)
+      setDocumentos(docs => docs.filter(d => d.chave_acesso !== modalExcluir))
+      setTotal(t => t - 1)
+      setModalExcluir(null)
+    } catch (err) {
+      alert('Erro ao excluir documento.')
+    }
   }
 
   const downloadXmlsZip = async () => {
@@ -693,6 +707,14 @@ function EmpresaDetalhe() {
                           <div className="flex gap-1.5 justify-end">
                             <BtnGhost onClick={() => downloadXml(doc.chave_acesso)}>XML</BtnGhost>
                             <BtnGhost onClick={() => downloadPdf(doc.chave_acesso)}>PDF</BtnGhost>
+                            {user?.perfil === 'admin' && (
+                              <BtnGhost
+                                onClick={() => setModalExcluir(doc.chave_acesso)}
+                                className="text-red-400 hover:text-red-300 border-red-400/20 hover:border-red-400/50"
+                              >
+                                Excluir
+                              </BtnGhost>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -749,6 +771,7 @@ function EmpresaDetalhe() {
         ══════════════════════════════════════════ */}
         {abaAtiva === 'inconsistencias' && (
           <InconsistenciasAba
+            empresa={empresa}
             arquivoSefaz={arquivoSefaz}
             setArquivoSefaz={setArquivoSefaz}
             analisando={analisando}
@@ -923,6 +946,15 @@ function EmpresaDetalhe() {
           </div>
         </div>
       )}
+
+      {modalExcluir && (
+        <ModalConfirmacao
+          titulo="Excluir documento"
+          mensagem="Tem certeza que deseja excluir este documento? Esta ação não pode ser desfeita."
+          onConfirmar={excluirDocumento}
+          onCancelar={() => setModalExcluir(null)}
+        />
+      )}
     </div>
   )
 }
@@ -946,6 +978,11 @@ function InconsistenciasAba({
   const [gerandoTodos, setGerandoTodos] = useState(false)
 
   const gerarXml = async (notas) => {
+    if (!empresa?.id) {
+      alert('Dados da empresa não carregados. Tente novamente.')
+      return
+    }
+    console.log('PAYLOAD:', { empresa_id: empresa.id, notas })
     const isTodos = notas.length > 1
     if (isTodos) {
       setGerandoTodos(true)
@@ -983,6 +1020,9 @@ function InconsistenciasAba({
         if (blob instanceof Blob) {
           const text = await blob.text()
           msg = JSON.parse(text)?.detail || msg
+          if (json?.erros?.length) {
+            msg += '\n' + json.erros.map(e => `Nota ${e.nota}: ${e.erro}`).join('\n')
+          }
         }
       } catch (e){
         console.error('erro ao ler blob:', e)
@@ -998,12 +1038,31 @@ function InconsistenciasAba({
     }
   }
 
-  const toNotaPayload = (item) => ({
-    numero_nota: item.numero,
-    serie: item.serie,
-    valor_total: item.valor_total,
-    data_emissao: item.data_emissao?.split('T')[0] || item.data_emissao,
-  })
+  const toNotaPayload = (item) => {
+    // Converte "17/05/2026 19:54:08" → "2026-05-17"
+    let data = item.data_emissao || ''
+    if (data.includes('/')) {
+      const [dia, mes, ano] = data.split(' ')[0].split('/')
+      data = `${ano}-${mes}-${dia}`
+    } else {
+      data = data.split('T')[0]
+    }
+
+    // Converte "91,19" → 91.19
+    const valor = parseFloat(
+      String(item.valor_total).replace('.', '').replace(',', '.')
+    )
+
+    return {
+      numero_nota: item.numero,
+      serie: item.serie,
+      valor_total: valor,
+      data_emissao: data,
+      chave_acesso: item.chave_acesso || null,
+      protocolo: item.protocolo || null,
+      natureza_operacao: item.natureza_operacao || null,
+    }
+  }
 
   return (
     <div className="space-y-5">

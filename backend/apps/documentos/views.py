@@ -50,10 +50,17 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         return [IsAdmin()]
 
     def destroy(self, request, *args, **kwargs):
-        return Response(
-            {'detail': 'Documentos Fiscais não podem ser deletados'},
-            status=status.HTTP_405_METHOD_NOT_ALLOWED
-        )
+        if request.user.perfil != 'admin':
+            return Response({'detail': 'Sem permissão.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        documento = self.get_object()
+        if documento.caminho_arquivo:
+            caminho = os.path.join('media', documento.caminho_arquivo)
+            if os.path.exists(caminho):
+                os.remove(caminho)
+
+        documento.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=['post'], url_path='upload', parser_classes=[MultiPartParser])
     def upload(self, request):
@@ -424,6 +431,10 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                     col_map[col] = 'data_emissao'
                 elif ('VALR' in col or 'VALOR' in col) and 'NOTA' in col:
                     col_map[col] = 'valor_total'
+                elif 'PROTOCOLO' in col:
+                    col_map[col] = 'protocolo'
+                elif 'NATUREZA' in col:
+                    col_map[col] = 'natureza_operacao'
 
             df = df.rename(columns=col_map)
             colunas_necessarias = ['numero', 'serie', 'situacao']
@@ -475,6 +486,8 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                     'chave_acesso': str(row.get('chave_acesso', '')),
                     'data_emissao': str(row.get('data_emissao', '')),
                     'valor_total': str(row.get('valor_total', '')),
+                    'protocolo': str(row.get('protocolo', '')),           
+                    'natureza_operacao': str(row.get('natureza_operacao', '')),  
                 })
 
         extras_no_sistema = []
@@ -630,19 +643,6 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         """
         Gera XMLs reconstituídos para notas ausentes no sistema.
  
-        Body JSON:
-        {
-            "empresa_id": 1,
-            "notas": [
-                {
-                    "numero_nota": "188",
-                    "serie": "11",
-                    "valor_total": "91.19",
-                    "data_emissao": "2026-05-17"
-                }
-            ]
-        }
- 
         Retorna:
         - XML direto (application/xml) se apenas uma nota sem erros
         - ZIP (application/zip) se múltiplas notas
@@ -676,6 +676,9 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                     serie=nota.get('serie'),
                     valor_total_sefaz=nota.get('valor_total'),
                     data_emissao=nota.get('data_emissao'),
+                    chave_acesso=nota.get('chave_acesso'),
+                    protocolo=nota.get('protocolo'),
+                    natureza_operacao=nota.get('natureza_operacao'),
                 )
  
                 if Documento.objects.filter(chave_acesso=chave).exists():
@@ -726,6 +729,8 @@ class DocumentoViewSet(viewsets.ModelViewSet):
                 })
  
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 erros.append({'nota': numero_nota, 'erro': str(e)})
  
         if not resultados:
