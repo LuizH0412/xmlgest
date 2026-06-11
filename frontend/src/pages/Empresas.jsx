@@ -87,10 +87,8 @@ function Empresas() {
       setErroCnpj('Digite um CNPJ completo (14 dígitos) antes de buscar.')
       return
     }
-
     setBuscandoCnpj(true)
     setErroCnpj('')
-
     try {
       const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpjLimpo}`)
       if (!res.ok) {
@@ -98,12 +96,11 @@ function Empresas() {
         return
       }
       const data = await res.json()
-
       setForm(f => ({
         ...f,
         razao_social: data.razao_social || '',
         nome_fantasia: data.nome_fantasia || data.razao_social || '',
-        inscricao_estadual: '', // Brasil API não retorna IE
+        inscricao_estadual: '',
       }))
       setErros(er => ({ ...er, razao_social: '', nome_fantasia: '' }))
     } catch {
@@ -117,11 +114,9 @@ function Empresas() {
     setSalvando(true)
     setErros({})
     setErroGeral('')
-
     try {
       const res = await api.post('/empresas/', form)
       const novaEmpresa = res.data
-
       if (certArquivo && certSenha) {
         const formData = new FormData()
         formData.append('certificado_pfx', certArquivo)
@@ -137,7 +132,6 @@ function Empresas() {
           return
         }
       }
-
       setModalAberto(false)
       await carregarEmpresas(pagina)
     } catch (err) {
@@ -161,83 +155,148 @@ function Empresas() {
     }
   }
 
+  // Iniciais para avatar
+  const getIniciais = (nome) => {
+    const palavras = nome?.trim().split(' ') || []
+    if (palavras.length === 1) return palavras[0].slice(0, 2).toUpperCase()
+    return (palavras[0][0] + palavras[1][0]).toUpperCase()
+  }
+
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors duration-200">
       <Navbar />
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
+      <div className="max-w-4xl mx-auto px-6 py-10">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-white text-2xl font-bold">Empresas</h1>
-            <p className="text-gray-400 mt-1">{total} empresa{total !== 1 ? 's' : ''} cadastrada{total !== 1 ? 's' : ''}</p>
+            <h1 className="text-gray-900 dark:text-white text-2xl font-bold tracking-tight">
+              Empresas
+            </h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+              {total} empresa{total !== 1 ? 's' : ''} cadastrada{total !== 1 ? 's' : ''}
+            </p>
           </div>
           <button
             onClick={abrirModal}
-            className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-medium px-4 py-2 rounded-lg transition"
+            className="flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors duration-150 shadow-sm"
           >
-            + Nova Empresa
+            <span className="text-base leading-none">+</span>
+            Nova Empresa
           </button>
         </div>
 
-        <div className="mb-4">
+        {/* Busca */}
+        <div className="relative mb-6">
+          <svg
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+          </svg>
           <input
             type="text"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Buscar por nome, CNPJ ou código interno..."
-            className="w-full bg-gray-900 text-white rounded-lg px-4 py-3 border border-gray-800 focus:outline-none focus:border-yellow-400 transition"
+            className="w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-xl pl-10 pr-4 py-3 border border-gray-200 dark:border-gray-800 focus:outline-none focus:border-yellow-400 dark:focus:border-yellow-400 text-sm transition-colors duration-150 placeholder-gray-400 dark:placeholder-gray-600 shadow-sm"
           />
         </div>
 
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Código</th>
-                <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Nome Fantasia</th>
-                <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">CNPJ</th>
-                <th className="text-left text-gray-400 text-sm px-6 py-4 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={4} className="text-center text-gray-400 py-8">Carregando...</td></tr>
-              ) : empresasFiltradas.length === 0 ? (
-                <tr><td colSpan={4} className="text-center text-gray-400 py-8">Nenhuma empresa encontrada</td></tr>
-              ) : (
-                empresasFiltradas.map((empresa) => (
-                  <tr
-                    key={empresa.id}
-                    onClick={() => navigate(`/empresas/${empresa.codigo_interno}`)}
-                    className="border-b border-gray-800 hover:bg-gray-800 transition cursor-pointer"
-                  >
-                    <td className="px-6 py-4 text-yellow-400 font-mono text-sm">{empresa.codigo_interno}</td>
-                    <td className="px-6 py-4 text-white font-medium">{empresa.nome_fantasia}</td>
-                    <td className="px-6 py-4 text-gray-400 text-sm">{empresa.cnpj.replace(/\D/g, '')}</td>
-                    <td className="px-6 py-4">
-                      {empresa.desativado ? (
-                        <span className="bg-red-400/10 text-red-400 text-xs px-2 py-1 rounded-full">Inativa</span>
-                      ) : (
-                        <span className="bg-green-400/10 text-green-400 text-xs px-2 py-1 rounded-full">Ativa</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        {/* Cards */}
+        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm">
+
+          {/* Header do card-list */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Todas as empresas
+            </span>
+            <span className="bg-yellow-400/20 text-yellow-700 dark:text-yellow-400 text-xs font-semibold px-2.5 py-1 rounded-full">
+              {empresasFiltradas.length}
+            </span>
+          </div>
+
+          {/* Lista */}
+          {loading ? (
+            <div className="py-16 text-center text-gray-400 dark:text-gray-600 text-sm">
+              Carregando...
+            </div>
+          ) : empresasFiltradas.length === 0 ? (
+            <div className="py-16 text-center">
+              <div className="text-gray-300 dark:text-gray-700 text-4xl mb-3">🏢</div>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">Nenhuma empresa encontrada</p>
+            </div>
+          ) : (
+            empresasFiltradas.map((empresa, idx) => (
+              <div
+                key={empresa.id}
+                onClick={() => navigate(`/empresas/${empresa.codigo_interno}`)}
+                className={`
+                  flex items-center gap-4 px-5 py-4 cursor-pointer
+                  hover:bg-gray-50 dark:hover:bg-gray-800/60
+                  active:bg-gray-100 dark:active:bg-gray-800
+                  transition-colors duration-100
+                  ${idx !== empresasFiltradas.length - 1 ? 'border-b border-gray-100 dark:border-gray-800' : ''}
+                `}
+              >
+                {/* Avatar */}
+                <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400 tracking-wide">
+                    {getIniciais(empresa.nome_fantasia)}
+                  </span>
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                    {empresa.nome_fantasia}
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                    #{empresa.codigo_interno} · {empresa.cnpj.replace(/\D/g, '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')}
+                  </p>
+                </div>
+
+                {/* Status */}
+                {empresa.desativado ? (
+                  <span className="flex-shrink-0 text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-400/10 text-red-600 dark:text-red-400 border border-red-100 dark:border-transparent">
+                    Inativa
+                  </span>
+                ) : (
+                  <span className="flex-shrink-0 text-xs font-medium px-2.5 py-1 rounded-full bg-green-50 dark:bg-green-400/10 text-green-700 dark:text-green-400 border border-green-100 dark:border-transparent">
+                    Ativa
+                  </span>
+                )}
+
+                {/* Chevron */}
+                <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 18l6-6-6-6" />
+                </svg>
+              </div>
+            ))
+          )}
         </div>
 
+        {/* Paginação */}
         {totalPaginas > 1 && (
-          <div className="flex items-center justify-between mt-4">
-            <p className="text-gray-400 text-sm">Página {pagina} de {totalPaginas}</p>
+          <div className="flex items-center justify-between mt-5">
+            <p className="text-gray-400 dark:text-gray-500 text-sm">
+              Página {pagina} de {totalPaginas}
+            </p>
             <div className="flex gap-2">
-              <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={pagina === 1}
-                className="bg-gray-900 text-white px-4 py-2 rounded-lg border border-gray-800 hover:border-yellow-400 transition disabled:opacity-50">
+              <button
+                onClick={() => setPagina(p => Math.max(1, p - 1))}
+                disabled={pagina === 1}
+                className="bg-white dark:bg-gray-900 text-gray-700 dark:text-white text-sm px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-yellow-400 dark:hover:border-yellow-400 transition-colors disabled:opacity-40 shadow-sm"
+              >
                 ← Anterior
               </button>
-              <button onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={pagina === totalPaginas}
-                className="bg-gray-900 text-white px-4 py-2 rounded-lg border border-gray-800 hover:border-yellow-400 transition disabled:opacity-50">
+              <button
+                onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+                disabled={pagina === totalPaginas}
+                className="bg-white dark:bg-gray-900 text-gray-700 dark:text-white text-sm px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-yellow-400 dark:hover:border-yellow-400 transition-colors disabled:opacity-40 shadow-sm"
+              >
                 Próxima →
               </button>
             </div>
@@ -248,137 +307,187 @@ function Empresas() {
       {/* Modal Nova Empresa */}
       {modalAberto && (
         <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4"
+          className="fixed inset-0 bg-black/60 dark:bg-black/75 flex items-center justify-center z-50 px-4 backdrop-blur-sm"
           onClick={fecharModal}
         >
           <div
-            className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-
-            <div className="flex items-center justify-between p-6 border-b border-gray-800">
-              <h2 className="text-white font-semibold text-lg">Nova Empresa</h2>
-              <button onClick={fecharModal} className="text-gray-400 hover:text-white transition text-xl leading-none">×</button>
+            {/* Header do modal */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-800">
+              <div>
+                <h2 className="text-gray-900 dark:text-white font-semibold text-base">Nova Empresa</h2>
+                <p className="text-gray-400 dark:text-gray-500 text-xs mt-0.5">Preencha os dados para cadastrar</p>
+              </div>
+              <button
+                onClick={fecharModal}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-lg leading-none"
+              >
+                ×
+              </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="px-6 py-5 space-y-4">
 
-              {/* CNPJ + lupa */}
+              {/* Campo reutilizável — CNPJ + lupa */}
               <div>
-                <label className="text-gray-400 text-xs mb-1 block">CNPJ <span className="text-red-400">*</span></label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+                  CNPJ <span className="text-red-400">*</span>
+                </label>
                 <div className="flex gap-2">
                   <input
                     name="cnpj"
                     value={form.cnpj}
                     onChange={handleChange}
                     placeholder="00.000.000/0000-00"
-                    className={`flex-1 bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${erros.cnpj ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`}
+                    className={`flex-1 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-3 py-2.5 border text-sm focus:outline-none transition-colors ${
+                      erros.cnpj
+                        ? 'border-red-400 focus:border-red-400'
+                        : 'border-gray-200 dark:border-gray-700 focus:border-yellow-400'
+                    }`}
                   />
                   <button
                     onClick={buscarCnpj}
                     disabled={buscandoCnpj}
                     title="Buscar dados do CNPJ"
-                    className="bg-gray-800 hover:bg-yellow-400/10 text-yellow-400 border border-gray-700 hover:border-yellow-400 px-3 py-2 rounded-lg transition disabled:opacity-50 text-sm"
+                    className="bg-gray-50 dark:bg-gray-800 hover:bg-yellow-50 dark:hover:bg-yellow-400/10 text-yellow-600 dark:text-yellow-400 border border-gray-200 dark:border-gray-700 hover:border-yellow-400 px-3.5 py-2.5 rounded-xl transition-colors disabled:opacity-50 text-sm"
                   >
-                    {buscandoCnpj ? '...' : '🔍'}
+                    {buscandoCnpj ? (
+                      <span className="inline-block w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                      </svg>
+                    )}
                   </button>
                 </div>
-                {erroCnpj && <p className="text-red-400 text-xs mt-1">{erroCnpj}</p>}
-                {erros.cnpj && <p className="text-red-400 text-xs mt-1">{erros.cnpj}</p>}
+                {erroCnpj && <p className="text-red-400 text-xs mt-1.5">{erroCnpj}</p>}
+                {erros.cnpj && <p className="text-red-400 text-xs mt-1.5">{erros.cnpj}</p>}
               </div>
 
               {/* Código Interno */}
               <div>
-                <label className="text-gray-400 text-xs mb-1 block">Código Interno <span className="text-red-400">*</span></label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+                  Código Interno <span className="text-red-400">*</span>
+                </label>
                 <input
                   name="codigo_interno"
                   value={form.codigo_interno}
                   onChange={handleChange}
                   placeholder="Ex: 64004"
-                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${erros.codigo_interno ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`}
+                  className={`w-full bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-3 py-2.5 border text-sm focus:outline-none transition-colors ${
+                    erros.codigo_interno
+                      ? 'border-red-400'
+                      : 'border-gray-200 dark:border-gray-700 focus:border-yellow-400'
+                  }`}
                 />
-                {erros.codigo_interno && <p className="text-red-400 text-xs mt-1">{erros.codigo_interno}</p>}
+                {erros.codigo_interno && <p className="text-red-400 text-xs mt-1.5">{erros.codigo_interno}</p>}
               </div>
 
               {/* Razão Social */}
               <div>
-                <label className="text-gray-400 text-xs mb-1 block">Razão Social <span className="text-red-400">*</span></label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+                  Razão Social <span className="text-red-400">*</span>
+                </label>
                 <input
                   name="razao_social"
                   value={form.razao_social}
                   onChange={handleChange}
-                  placeholder="Preenchido automaticamente pela lupa"
-                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${erros.razao_social ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`}
+                  placeholder="Preenchido automaticamente pela busca"
+                  className={`w-full bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-3 py-2.5 border text-sm focus:outline-none transition-colors ${
+                    erros.razao_social
+                      ? 'border-red-400'
+                      : 'border-gray-200 dark:border-gray-700 focus:border-yellow-400'
+                  }`}
                 />
-                {erros.razao_social && <p className="text-red-400 text-xs mt-1">{erros.razao_social}</p>}
+                {erros.razao_social && <p className="text-red-400 text-xs mt-1.5">{erros.razao_social}</p>}
               </div>
 
               {/* Nome Fantasia */}
               <div>
-                <label className="text-gray-400 text-xs mb-1 block">Nome Fantasia <span className="text-red-400">*</span></label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+                  Nome Fantasia <span className="text-red-400">*</span>
+                </label>
                 <input
                   name="nome_fantasia"
                   value={form.nome_fantasia}
                   onChange={handleChange}
-                  placeholder="Preenchido automaticamente pela lupa"
-                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${erros.nome_fantasia ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`}
+                  placeholder="Preenchido automaticamente pela busca"
+                  className={`w-full bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-3 py-2.5 border text-sm focus:outline-none transition-colors ${
+                    erros.nome_fantasia
+                      ? 'border-red-400'
+                      : 'border-gray-200 dark:border-gray-700 focus:border-yellow-400'
+                  }`}
                 />
-                {erros.nome_fantasia && <p className="text-red-400 text-xs mt-1">{erros.nome_fantasia}</p>}
+                {erros.nome_fantasia && <p className="text-red-400 text-xs mt-1.5">{erros.nome_fantasia}</p>}
               </div>
 
               {/* Inscrição Estadual */}
               <div>
-                <label className="text-gray-400 text-xs mb-1 block">Inscrição Estadual</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+                  Inscrição Estadual
+                </label>
                 <input
                   name="inscricao_estadual"
                   value={form.inscricao_estadual}
                   onChange={handleChange}
                   placeholder="Opcional"
-                  className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm transition"
+                  className="w-full bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-3 py-2.5 border border-gray-200 dark:border-gray-700 focus:outline-none focus:border-yellow-400 text-sm transition-colors"
                 />
               </div>
 
               {/* Email Contabilidade */}
               <div>
-                <label className="text-gray-400 text-xs mb-1 block">Email da Contabilidade</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+                  Email da Contabilidade
+                </label>
                 <input
                   name="email_contabilidade"
                   type="email"
                   value={form.email_contabilidade}
                   onChange={handleChange}
                   placeholder="contabilidade@exemplo.com"
-                  className={`w-full bg-gray-800 text-white rounded-lg px-3 py-2 border focus:outline-none text-sm transition ${erros.email_contabilidade ? 'border-red-400' : 'border-gray-700 focus:border-yellow-400'}`}
+                  className={`w-full bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-3 py-2.5 border text-sm focus:outline-none transition-colors ${
+                    erros.email_contabilidade
+                      ? 'border-red-400'
+                      : 'border-gray-200 dark:border-gray-700 focus:border-yellow-400'
+                  }`}
                 />
-                {erros.email_contabilidade && <p className="text-red-400 text-xs mt-1">{erros.email_contabilidade}</p>}
+                {erros.email_contabilidade && <p className="text-red-400 text-xs mt-1.5">{erros.email_contabilidade}</p>}
               </div>
 
-              {/* Certificado */}
-              <div className="border-t border-gray-800 pt-4">
-                <p className="text-gray-400 text-xs mb-3">Certificado Digital A1 <span className="text-gray-600">(opcional, pode adicionar depois)</span></p>
+              {/* Certificado Digital */}
+              <div className="border-t border-gray-100 dark:border-gray-800 pt-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Certificado Digital A1</p>
+                  <span className="text-xs text-gray-400 dark:text-gray-600">opcional</span>
+                </div>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-gray-400 text-xs mb-1 block">Arquivo .pfx</label>
+                    <label className="text-xs text-gray-400 dark:text-gray-500 mb-1.5 block">Arquivo .pfx</label>
                     <input
                       type="file"
                       accept=".pfx,.p12"
                       onChange={(e) => setCertArquivo(e.target.files[0])}
-                      className="w-full bg-gray-800 text-gray-300 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-yellow-400/10 file:text-yellow-400 file:text-xs cursor-pointer"
+                      className="w-full bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm rounded-xl px-3 py-2.5 border border-gray-200 dark:border-gray-700 focus:outline-none focus:border-yellow-400 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-yellow-50 dark:file:bg-yellow-400/10 file:text-yellow-700 dark:file:text-yellow-400 file:text-xs cursor-pointer"
                     />
                   </div>
                   {certArquivo && (
                     <div>
-                      <label className="text-gray-400 text-xs mb-1 block">Senha do certificado</label>
+                      <label className="text-xs text-gray-400 dark:text-gray-500 mb-1.5 block">Senha do certificado</label>
                       <div className="flex items-center gap-2">
                         <input
                           type={mostrarSenhaCert ? 'text' : 'password'}
                           value={certSenha}
                           onChange={(e) => setCertSenha(e.target.value)}
                           placeholder="Senha do .pfx"
-                          className="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:outline-none focus:border-yellow-400 text-sm"
+                          className="flex-1 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-3 py-2.5 border border-gray-200 dark:border-gray-700 focus:outline-none focus:border-yellow-400 text-sm"
                         />
                         <button
                           onClick={() => setMostrarSenhaCert(!mostrarSenhaCert)}
-                          className="text-gray-400 hover:text-white text-xs transition whitespace-nowrap"
+                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors whitespace-nowrap px-1"
                         >
                           {mostrarSenhaCert ? 'Ocultar' : 'Revelar'}
                         </button>
@@ -388,18 +497,31 @@ function Empresas() {
                 </div>
               </div>
 
-              {erroGeral && <p className="text-red-400 text-xs">❌ {erroGeral}</p>}
+              {erroGeral && (
+                <div className="flex items-start gap-2 bg-red-50 dark:bg-red-400/10 border border-red-100 dark:border-red-400/20 rounded-xl px-4 py-3">
+                  <span className="text-red-400 text-sm mt-0.5">✕</span>
+                  <p className="text-red-600 dark:text-red-400 text-xs">{erroGeral}</p>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-800">
-              <button onClick={fecharModal} disabled={salvando} className="text-gray-400 hover:text-white text-sm transition disabled:opacity-50">
+            {/* Footer do modal */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+              <button
+                onClick={fecharModal}
+                disabled={salvando}
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors disabled:opacity-50 px-3 py-2"
+              >
                 Cancelar
               </button>
-              <button onClick={salvar} disabled={salvando} className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-medium px-5 py-2 rounded-lg transition disabled:opacity-50">
+              <button
+                onClick={salvar}
+                disabled={salvando}
+                className="bg-yellow-400 hover:bg-yellow-300 text-gray-900 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors disabled:opacity-50 shadow-sm"
+              >
                 {salvando ? 'Salvando...' : 'Cadastrar'}
               </button>
             </div>
-
           </div>
         </div>
       )}

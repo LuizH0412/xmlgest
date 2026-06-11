@@ -32,11 +32,16 @@ function Login() {
 
       {/* Lado esquerdo */}
       <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-yellow-400 to-yellow-600 flex-col justify-between p-12">
-        <div className="flex items-center gap-3">
-          <div className="bg-white/20 p-2 rounded-xl">
-            <span className="text-white text-2xl">📁</span>
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 bg-yellow-400 rounded-lg flex items-center justify-center">
+            <svg className="w-4 h-4 text-gray-900" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </div>
-          <span className="text-white font-bold text-xl">FiscalHub</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-gray-900 dark:text-white font-bold text-base tracking-tight">FiscalHub</span>
+            <span className="text-gray-400 dark:text-gray-500 text-xs">by Softcom</span>
+          </div>
         </div>
 
         <div>

@@ -61,6 +61,68 @@ class DocumentoViewSet(viewsets.ModelViewSet):
 
         documento.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+
+    @action(detail=False, methods=['post'], url_path='validar-upload', parser_classes=[MultiPartParser])
+    def validar_upload(self, request):
+        arquivo = request.FILES.get('arquivo')
+        empresa_id = request.query_params.get('empresa') 
+
+        if not arquivo:
+            return Response({'detail': 'Nenhum arquivo enviado.'}, status=400)
+
+        if not empresa_id:
+            return Response({'detail': 'Parâmetro empresa é obrigatório.'}, status=400)
+
+        try:
+            empresa_atual = Empresa.objects.get(id=empresa_id)
+        except Empresa.DoesNotExist:
+            return Response({'detail': 'Empresa não encontrada.'}, status=404)
+
+        try:
+            dados = extrair_dados(arquivo)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=400)
+
+        # Valida se o CNPJ do XML pertence à empresa que está sendo acessada
+        cnpj_xml = dados['cnpj_emitente']
+        if cnpj_xml != empresa_atual.cnpj:
+            return Response({
+                'status': 'cnpj_invalido',
+                'cnpj': cnpj_xml,
+                'label': 'CNPJ não pertence a esta empresa'
+            }, status=200)
+
+        existente = Documento.objects.filter(chave_acesso=dados['chave_acesso']).first()
+
+        if not existente:
+            return Response({
+                'status': 'novo',
+                'label': 'Não existe na base',
+                'dados': dados,  
+            })
+
+        divergencias = []
+        if str(existente.valor_total) != str(dados['valor_total']):
+            divergencias.append(f"Valor: {existente.valor_total} → {dados['valor_total']}")
+        if str(existente.numero_nota) != str(dados['numero_nota']):
+            divergencias.append(f"Número: {existente.numero_nota} → {dados['numero_nota']}")
+        if existente.serie != dados['serie']:
+            divergencias.append(f"Série: {existente.serie} → {dados['serie']}")
+
+        if divergencias:
+            return Response({
+                'status': 'divergente',
+                'label': 'Existente com valores divergentes',
+                'divergencias': divergencias,
+                'dados': dados,  
+            })
+
+        return Response({
+            'status': 'existente',
+            'label': 'Já existe na base',
+            'dados': dados,  
+        })
 
     @action(detail=False, methods=['post'], url_path='upload', parser_classes=[MultiPartParser])
     def upload(self, request):
@@ -130,6 +192,17 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             {'detail': 'Documento enviado com sucesso.', 'id': documento.id},
             status=status.HTTP_201_CREATED
         )
+    
+    @action(detail=False, methods=['post'], url_path='preview', parser_classes=[MultiPartParser])
+    def preview(self, request):
+        arquivo = request.FILES.get('arquivo')
+        if not arquivo:
+            return Response({'detail': 'Nenhum arquivo enviado.'}, status=400)
+        try:
+            dados = extrair_dados(arquivo)
+            return Response(dados)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=400)
 
     @action(detail=True, methods=['get'], url_path='download-xml')
     def download_xml(self, request, chave_acesso=None):

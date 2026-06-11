@@ -73,16 +73,23 @@ def _assinar_xml(xml_bytes, private_key_pem, cert_pem):
     root = etree.fromstring(xml_bytes)
     NS_SIG = 'http://www.w3.org/2000/09/xmldsig#'
 
-    inf_nfe = root.find(f'.//{{{NS}}}infNFe')
+    # Se o root for nfeProc, pega o NFe dentro
+    if root.tag == f'{{{NS}}}nfeProc':
+        nfe_el = root.find(f'{{{NS}}}NFe')
+    else:
+        nfe_el = root
+
+    inf_nfe = nfe_el.find(f'{{{NS}}}infNFe')
     if inf_nfe is None:
         raise ValueError('infNFe não encontrado no XML para assinar.')
 
     ref_uri = inf_nfe.get('Id')
+    print(f"[ASSINAR] ref_uri encontrado: {ref_uri}")
 
-    # Canonicaliza o infNFe (C14N)
+    # Canonicaliza o infNFe
     inf_nfe_c14n = etree.tostring(inf_nfe, method='c14n', exclusive=False, with_comments=False)
 
-    # DigestValue do infNFe
+    # DigestValue
     digest = hashlib.sha1(inf_nfe_c14n).digest()
     digest_b64 = base64.b64encode(digest).decode()
 
@@ -103,17 +110,17 @@ def _assinar_xml(xml_bytes, private_key_pem, cert_pem):
     signed_info_el = etree.fromstring(signed_info_xml.encode())
     signed_info_c14n = etree.tostring(signed_info_el, method='c14n', exclusive=False, with_comments=False)
 
-    # Carrega chave privada e assina
+    # Assina
     private_key = serialization.load_pem_private_key(private_key_pem, password=None)
     signature_bytes = private_key.sign(signed_info_c14n, padding.PKCS1v15(), hashes.SHA1())
     signature_b64 = base64.b64encode(signature_bytes).decode()
 
-    # Extrai X509Certificate do cert_pem
+    # Certificado
     cert = load_pem_x509_certificate(cert_pem)
     cert_der = cert.public_bytes(serialization.Encoding.DER)
     cert_b64 = base64.b64encode(cert_der).decode()
 
-    # Monta o bloco <Signature> completo
+    # Monta bloco Signature e anexa no NFe (não no nfeProc)
     signature_xml = f'''<Signature xmlns="{NS_SIG}">
 {signed_info_xml}
 <SignatureValue>{signature_b64}</SignatureValue>
@@ -125,7 +132,7 @@ def _assinar_xml(xml_bytes, private_key_pem, cert_pem):
 </Signature>'''
 
     sig_el = etree.fromstring(signature_xml.encode())
-    root.append(sig_el)
+    nfe_el.append(sig_el)  # ← anexa no NFe, não no root
 
     return etree.tostring(
         root,
@@ -302,8 +309,6 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao,
         det = etree.Element(f'{{{NS}}}det', attrib={'nItem': str(idx)})
 
         # Calcula vOutro (10% do valor, arredondado)
-        v_outro = (it['val'] * Decimal('0.1')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        v_item = it['val'] + v_outro
 
         prod = etree.SubElement(det, f'{{{NS}}}prod')
         _set(prod, 'cProd', str(idx).zfill(6))
@@ -321,7 +326,6 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao,
         _set(prod, 'uTrib', 'UND')
         _set(prod, 'qTrib', f"{it['qtd']:.4f}")
         _set(prod, 'vUnTrib', f"{it['v_unit']:.10f}")
-        _set(prod, 'vOutro', f"{v_outro:.2f}")
         _set(prod, 'indTot', '1')
 
         imposto = etree.SubElement(det, f'{{{NS}}}imposto')
@@ -369,15 +373,10 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao,
             _set(cof_tipo, 'pCOFINS', '0.00')
             _set(cof_tipo, 'vCOFINS', '0.00')
 
-        # vItem no final do det
-        _set(det, 'vItem', f"{v_item:.2f}")
-
         inf_nfe_el.insert(total_idx + idx - 1, det)
 
     # ── 6. Atualiza totais ───────────────────────────────────────────────────
     v_prod = sum(it['val'] for it in itens_rateados)
-    v_outro_total = sum((it['val'] * Decimal('0.1')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) for it in itens_rateados)
-    v_nf = v_prod + v_outro_total
 
     # Reconstrói ICMSTot na ordem correta
     icms_tot = root.find('.//nfe:total/nfe:ICMSTot', NS_MAP)
@@ -393,13 +392,17 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao,
             ('vFrete', '0.00'), ('vSeg', '0.00'), ('vDesc', '0.00'),
             ('vII', '0.00'), ('vIPI', '0.00'), ('vIPIDevol', '0.00'),
             ('vPIS', '0.00'), ('vCOFINS', '0.00'),
-            ('vOutro', f'{v_outro_total:.2f}'),
-            ('vNF', f'{v_nf:.2f}'),
+            ('vOutro', '0.00'),
+            ('vNF', f'{valor_total:.2f}'),
             ('vTotTrib', '0.00'),
         ]
         for tag, val in campos:
             el = etree.SubElement(icms_tot, f'{{{NS}}}{tag}')
             el.text = val
+        
+        pag_vpag = root.find('.//nfe:pag/nfe:detPag/nfe:vPag', NS_MAP)
+        if pag_vpag is not None:
+            pag_vpag.text = f"{valor_total:.2f}"
 
     # ── 6b. Atualiza pagamento ────────────────────────────────────────────────
     det_pag = root.find('.//nfe:pag/nfe:detPag', NS_MAP)
@@ -407,7 +410,7 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao,
         det_pag.clear()
         _set(det_pag, 'indPag', '0')
         _set(det_pag, 'tPag', '01')  # 01 = dinheiro (genérico)
-        _set(det_pag, 'vPag', f'{v_nf:.2f}')
+        _set(det_pag, 'vPag', f'{valor_total:.2f}')
 
     # Remove vTroco se existir
     pag_el = root.find('.//nfe:pag', NS_MAP)
@@ -443,9 +446,33 @@ def gerar_xml_nota(empresa, numero_nota, serie, valor_total_sefaz, data_emissao,
 
     # Remove assinatura anterior do modelo se existir
     sig_ns = 'http://www.w3.org/2000/09/xmldsig#'
+
+    # Tenta remover do root (nfeProc)
     sig = root.find(f'{{{sig_ns}}}Signature')
     if sig is not None:
         root.remove(sig)
+
+    # Tenta remover do NFe (caso o modelo seja nfeProc)
+    nfe_el = root.find(f'.//{{{NS}}}NFe')
+    if nfe_el is not None:
+        sig = nfe_el.find(f'{{{sig_ns}}}Signature')
+        if sig is not None:
+            nfe_el.remove(sig)
+
+    # ── 7b. Atualiza infNFeSupl ──────────────────────────────────────────────
+    inf_nfe_supl = root.find(f'.//{{{NS}}}infNFeSupl')
+    if inf_nfe_supl is not None:
+        qr_code_el = inf_nfe_supl.find(f'{{{NS}}}qrCode')
+        url_chave_el = inf_nfe_supl.find(f'{{{NS}}}urlChave')
+        if qr_code_el is not None:
+            # Monta URL básica com a nova chave (sem hash — para consulta simples)
+            uf_url = 'mt'  # ajusta se necessário
+            qr_code_el.text = (
+                f"http://www.sefaz.{uf_url}.gov.br/nfce/consultanfce"
+                f"?p={chave}|2|1|1|"
+            )
+        if url_chave_el is not None:
+            url_chave_el.text = f"http://www.sefaz.{uf_url}.gov.br/nfce/consultanfce"
 
     # ── 8. Serializa para bytes (sem assinatura ainda) ───────────────────────
     xml_bytes = etree.tostring(

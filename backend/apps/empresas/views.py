@@ -85,7 +85,7 @@ class EmpresaViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def empresas_sem_xml(request):
-    cinco_dias_atras = timezone.now() - timedelta(days=5)
+    dias_atras = timezone.now() - timedelta(days=1)
     empresas_ativas = Empresa.objects.filter(desativado=False)
 
     alertas = []
@@ -94,12 +94,20 @@ def empresas_sem_xml(request):
             empresa=empresa
         ).order_by('-criado_em').first()
 
-        if not ultimo_xml or ultimo_xml.criado_em < cinco_dias_atras:
+        if not ultimo_xml or ultimo_xml.criado_em < dias_atras:
+        # Calcula os dias de diferença
+            if ultimo_xml:
+                dias_sem_xml = (timezone.now() - ultimo_xml.criado_em).days
+            else:
+                dias_sem_xml = None  # nunca recebeu nenhum XML
+
+        if not ultimo_xml or ultimo_xml.criado_em < dias_atras:
             alertas.append({
                 'id': empresa.id,
                 'nome': empresa.nome_fantasia,
                 'codigo_interno': empresa.codigo_interno,
                 'ultimo_xml': ultimo_xml.criado_em if ultimo_xml else None,
+                'dias_sem_xml': dias_sem_xml,
             })
 
     return Response(alertas)
