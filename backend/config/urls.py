@@ -10,6 +10,7 @@ from django.conf.urls.static import static
 from apps.empresas.views_auth import ColetorTokenView
 from apps.empresas.views import empresas_sem_xml, empresa_por_codigo
 from apps.usuarios.views import CustomTokenObtainPairView
+from apps.auditoria.views import AuditoriaViewSet
 
 router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet, basename='usuarios')

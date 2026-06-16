@@ -2,6 +2,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import time
 import os
+import logger
 
 
 class XMLHandler(FileSystemEventHandler):
@@ -15,14 +16,14 @@ class XMLHandler(FileSystemEventHandler):
             return
 
         if not self._aguardar_arquivo(event.src_path):
-            print(f"Arquivo não ficou disponível: {event.src_path}")
+            logger.log(f"Arquivo não ficou disponível: {event.src_path}", 'AVISO')
             return
 
         sucesso = self.api_client.upload_xml(event.src_path)
         if sucesso:
-            print(f"Upload realizado: {event.src_path}")
+            logger.log(f"Upload realizado: {event.src_path}", 'OK')
         else:
-            print(f"Falha no upload: {event.src_path}")
+            logger.log(f"Falha no upload: {event.src_path}", 'ERRO')
 
     def _aguardar_arquivo(self, caminho, tentativas=10, intervalo=0.5):
         tamanho_anterior = -1
@@ -50,17 +51,17 @@ class FolderWatcher:
         for tipo, pasta in self.pastas.items():
             if pasta:
                 self.observer.schedule(handler, pasta, recursive=True)
-                print(f"Monitorando {tipo}: {pasta}")
+                logger.log(f"Monitorando {tipo}: {pasta}")
         self.observer.start()
-        print("Monitoramento iniciado.")
+        logger.log("Monitoramento iniciado.")
 
     def parar(self):
         self.observer.stop()
         self.observer.join()
-        print("Monitoramento parado.")
+        logger.log("Monitoramento parado.")
 
     def sincronizar_existentes(self):
-        print("Sincronizando arquivos existentes...")
+        logger.log("Sincronizando arquivos existentes...")
         for tipo, pasta in self.pastas.items():
             if not pasta:
                 continue
@@ -70,9 +71,9 @@ class FolderWatcher:
                         caminho = os.path.join(raiz, arquivo)
                         sucesso = self.api_client.upload_xml(caminho)
                         if sucesso is True:
-                            print(f"Sincronizado: {caminho}")
+                            logger.log(f"Sincronizado: {caminho}", 'OK')
                         elif sucesso is None:
-                            print(f"Já existe: {caminho}")  
+                            logger.log(f"Já existe: {caminho}", 'INFO')
                         else:
-                            print(f"Falhou: {caminho}") 
-        print("Sincronização concluída.")
+                            logger.log(f"Falhou: {caminho}", 'ERRO')
+        logger.log("Sincronização concluída.")

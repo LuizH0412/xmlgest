@@ -4,6 +4,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
+import sys
+import os
+
+
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath('.'), relative_path)
 
 
 STYLE = """
@@ -68,10 +76,10 @@ class ConfigWindow(QWidget):
         self.carregar_configuracoes()
 
     def setup_ui(self):
-        self.setWindowTitle('XMLGest — Softcom')
+        self.setWindowTitle('Coletor — Softcom')
         self.setMinimumWidth(520)
         self.setStyleSheet(STYLE)
-        self.setWindowIcon(QIcon('assets/icone-novo.ico'))
+        self.setWindowIcon(QIcon(resource_path('assets/icone-novo.ico')))
 
         layout = QVBoxLayout()
         layout.setSpacing(10)
@@ -79,7 +87,7 @@ class ConfigWindow(QWidget):
         self.setLayout(layout)
 
         # Título
-        titulo = QLabel('XMLGest — Configuração do Coletor')
+        titulo = QLabel('Coletor — Configuração do Coletor')
         titulo.setObjectName('titulo')
         layout.addWidget(titulo)
 
@@ -104,7 +112,7 @@ class ConfigWindow(QWidget):
         pastas_layout = QVBoxLayout()
         grupo_pastas.setLayout(pastas_layout)
 
-        for tipo in ['NFe', 'NFCe', 'CTe', 'MDFe']:
+        for tipo in ['NFe', 'NFCe']:
             tipo_layout = QHBoxLayout()
 
             label = QLabel(f'{tipo}:')

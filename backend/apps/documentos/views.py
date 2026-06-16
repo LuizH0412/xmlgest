@@ -32,6 +32,7 @@ from apps.documentos.models import ExportacaoXml
 import zipfile
 from io import BytesIO
 from apps.documentos.gerar_xml_service import gerar_xml_nota
+from apps.auditoria import service as auditoria
 
 
 class DocumentoViewSet(viewsets.ModelViewSet):
@@ -182,11 +183,18 @@ class DocumentoViewSet(viewsets.ModelViewSet):
             caminho_arquivo=caminho,
             enviado_por=enviado_por,
         )
+        auditoria.registrar(
+            request,
+            acao='upload_documento',
+            detalhes=f'Chave: {documento.chave_acesso}',
+            empresa=empresa,
+        )
 
         ItemDocumento.objects.bulk_create([
             ItemDocumento(documento=documento, empresa=empresa, **item)
             for item in dados.get('itens', [])
         ])
+        
 
         return Response(
             {'detail': 'Documento enviado com sucesso.', 'id': documento.id},

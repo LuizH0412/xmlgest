@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import keyring
 
 APP_NAME = 'XMLGest'
@@ -23,8 +24,6 @@ class ConfigManager:
                 'pastas': {
                     'NFe': '',
                     'NFCe': '',
-                    'CTe': '',
-                    'MDFe': ''
                 }
             }
         with open(self.config_file, 'r') as f:

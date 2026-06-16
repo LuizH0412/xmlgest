@@ -94,7 +94,7 @@ def _gerar_zip_e_enviar_email(empresa, documentos, label_periodo, filtros_extras
             f'{empresa.nome_fantasia} (CNPJ: {empresa.cnpj}) estão disponíveis para download.\n\n'
             f'Total de documentos: {total_geral}\n'
             f'{resumo}\n\n'
-            f'Atenciosamente,\nSoftcom'
+            f'Atenciosamente,\nSoftcom Cuiabá'
         ),
         from_email=settings.DEFAULT_FROM_EMAIL,
         to=[empresa.email_contabilidade],
