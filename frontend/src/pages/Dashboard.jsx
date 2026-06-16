@@ -72,8 +72,8 @@ function Dashboard() {
                   : 'text-yellow-600 dark:text-yellow-500'
               }`}>
                 {alertas.length === 0
-                  ? 'Nenhuma inconsistência detectada nos últimos 5 dias'
-                  : 'Empresas que não enviaram XMLs nos últimos 5 dias'}
+                  ? 'Nenhuma inconsistência detectada nos últimos dias'
+                  : 'Empresas que não enviaram XMLs nos últimos dias'}
               </p>
             </div>
           </div>
